@@ -1,0 +1,2665 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FamilyCent - אפליקציית ניהול תקציב</title>
+  
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="FamilyCent">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: 'Assistant', sans-serif; }
+    .page { display: none !important; }
+    .page.active { display: flex !important; }
+    .step { display: none; }
+    .step.active { display: block; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    @media print {
+      body * { visibility: hidden; }
+      #printReportArea, #printReportArea * { visibility: visible; }
+      #printReportArea { position: absolute; left: 0; top: 0; width: 100%; }
+      .no-print { display: none !important; }
+    }
+
+    /* --- מצב כהה --- */
+    html.dark body { background-color: #0f172a; }
+    html.dark .bg-white { background-color: #1e293b !important; }
+    html.dark .bg-slate-50 { background-color: #0f172a !important; }
+    html.dark .bg-slate-100 { background-color: #1e293b !important; }
+    html.dark .bg-slate-900 { background-color: #020617 !important; }
+    html.dark .bg-indigo-50 { background-color: #1e2a4a !important; }
+    html.dark .bg-emerald-50 { background-color: #0f2e26 !important; }
+    html.dark .bg-rose-50 { background-color: #3a1520 !important; }
+    html.dark .bg-amber-50 { background-color: #3a2e10 !important; }
+    html.dark .bg-violet-50 { background-color: #241b3a !important; }
+    html.dark .text-slate-900 { color: #f1f5f9 !important; }
+    html.dark .text-slate-800 { color: #e2e8f0 !important; }
+    html.dark .text-slate-700 { color: #cbd5e1 !important; }
+    html.dark .text-slate-600 { color: #94a3b8 !important; }
+    html.dark .text-slate-500 { color: #94a3b8 !important; }
+    html.dark .text-slate-400 { color: #64748b !important; }
+    html.dark .border-slate-100, html.dark .border-slate-200, html.dark .border-slate-300,
+    html.dark .border-slate-200\/60 { border-color: #334155 !important; }
+    html.dark .divide-slate-100 > * + * { border-color: #334155 !important; }
+    html.dark input, html.dark select, html.dark textarea {
+      background-color: #1e293b !important; color: #e2e8f0 !important; border-color: #334155 !important;
+    }
+    html.dark .shadow-md, html.dark .shadow-lg, html.dark .shadow-xl { box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important; }
+    /* --- סוף מצב כהה --- */
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
+
+  <script>
+    let currentUserEmail = '';
+    let currentUserId = null;
+    let currentUserCurrency = '₪';
+    let myExpensesChart = null;
+    let myYearlyExpensesChart = null; 
+    let myTrendChart = null;
+    let localTransactions = []; 
+    let currentUserRawData = {};
+    let editingTransactionId = null;
+    let editingUserEmailByAdmin = null;
+    let generatedReports = [];
+
+    /* --- חיבור ל-Supabase (בסיס נתונים ואימות משתמשים אמיתי בענן) --- */
+    const SUPABASE_URL = 'https://unkrcsdymaggkruzeorc.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_dvhVqnAszM_PdsqfnxoRMw_IJ96ekXJ';
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    /* מאזין לאירוע "שחזור סיסמה" - קורה כשמשתמש לוחץ על קישור איפוס סיסמה מהמייל וחוזר לאתר */
+    sb.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        document.getElementById('resetPasswordModal').classList.remove('hidden');
+      }
+    });
+
+    async function submitNewPassword() {
+      const newPassword = document.getElementById('newResetPasswordInput').value;
+      if (!newPassword || newPassword.length < 6) { alert('הסיסמה חייבת להכיל לפחות 6 תווים'); return; }
+      const { error } = await sb.auth.updateUser({ password: newPassword });
+      if (error) { alert('שגיאה בעדכון הסיסמה: ' + error.message); return; }
+      document.getElementById('resetPasswordModal').classList.add('hidden');
+      document.getElementById('newResetPasswordInput').value = '';
+      alert('הסיסמה עודכנה בהצלחה!');
+      const { data: { session } } = await sb.auth.getSession();
+      if (session && session.user) { await completeLoginFlow(session.user); }
+    }
+    /* --- סוף חיבור Supabase --- */
+    
+    let customCategories = ['🛒 סופרמרקט', '🚗 תחבורה', '🏠 מדור וחשבונות', '💰 כללי'];
+    let userCategoryRows = []; // שומר גם את ה-id של כל שורת קטגוריה מ-Supabase, למחיקה מדויקת
+
+    /* --- ניהול קטגוריות מותאמות אישית: נשמר ב-Supabase --- */
+    async function loadUserCategories() {
+      const { data, error } = await sb.from('categories').select('*').eq('user_id', currentUserId).order('name');
+      if (error) { console.error(error); return; }
+
+      if (data.length === 0) {
+        const defaults = ['🛒 סופרמרקט', '🚗 תחבורה', '🏠 מדור וחשבונות', '💰 כללי'];
+        const rows = defaults.map(name => ({ user_id: currentUserId, name }));
+        const { data: inserted, error: insertError } = await sb.from('categories').insert(rows).select();
+        if (insertError) { console.error(insertError); customCategories = defaults; userCategoryRows = []; return; }
+        userCategoryRows = inserted;
+      } else {
+        userCategoryRows = data;
+      }
+      customCategories = userCategoryRows.map(r => r.name);
+    }
+    
+    // משתנה עזר לשמירת סוג הדוח המופק ידנית במודל החדש
+    let activeManualReportType = 'month';
+  </script>
+
+  <!-- עמוד 1: מסך כניסה והרשמה -->
+  <div id="authPage" class="page active w-full min-h-screen flex flex-col justify-center items-center py-12 px-4 bg-slate-100">
+    <div class="w-full sm:max-w-md">
+      <div id="progressWrapper" class="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-4 hidden">
+        <div id="progressBar" class="bg-indigo-600 h-2 rounded-full transition-all duration-500 ease-out shadow-sm" style="width: 33.33%"></div>
+      </div>
+      <div class="text-center mb-8">
+        <h2 id="stepTitle" class="text-4xl font-extrabold text-slate-900 tracking-tight">FamilyCent</h2>
+        <p id="stepSub" class="mt-2 text-sm text-slate-600 font-medium">אפליקציית ניהול תקציב משפחתי עצמאית ומאובטחת</p>
+      </div>
+    </div>
+
+    <div class="w-full sm:max-w-md">
+      <div class="bg-white py-8 px-6 shadow-xl border border-slate-200/60 rounded-3xl sm:px-10">
+        
+        <!-- טופס כניסה למערכת -->
+        <div id="loginForm" class="space-y-5">
+          <div id="loginAlertPlaceholder"></div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">כתובת אימייל</label>
+            <div class="relative">
+              <input id="loginEmail" type="email" placeholder="you@example.com" oninput="handleEmailAutocomplete(this)" onblur="handleEmailBlur(this)" autocomplete="off" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl shadow-sm text-left" style="direction: ltr;">
+            </div>
+          </div>
+          <div>
+            <label class="text-sm font-semibold text-slate-700 block mb-1">סיסמה</label>
+            <input id="loginPassword" type="password" placeholder="••••••••" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl shadow-sm text-left" style="direction: ltr;">
+          </div>
+          <div class="text-left">
+            <button onclick="forgotPassword()" class="text-xs text-indigo-600 font-medium hover:underline">שכחתי סיסמה</button>
+          </div>
+          <button onclick="handleLogin()" class="w-full py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md transition transform active:scale-95">
+            התחברות למערכת
+          </button>
+          <div class="text-center pt-2">
+            <p class="text-sm text-slate-600">משתמשים חדשים? <button onclick="toggleToRegister()" class="text-indigo-600 font-bold hover:underline">לחצו כאן ליצירת חשבון</button></p>
+          </div>
+        </div>
+
+        <!-- שלבי הרשמה למשתמש חדש -->
+        <div id="registerForm" class="hidden">
+          <div id="step1" class="step active space-y-5">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">כתובת אימייל חדשה</label>
+              <div class="relative">
+                <input id="emailInput" type="email" placeholder="you@example.com" oninput="handleEmailAutocomplete(this)" onblur="handleEmailBlur(this)" autocomplete="off" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-left" style="direction: ltr;">
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">בחרו סיסמה</label>
+              <input id="passwordInput" type="password" placeholder="••••••••" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-left" style="direction: ltr;">
+            </div>
+            <button onclick="goToStep(2)" class="w-full py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">
+              המשך לשלב הבא
+            </button>
+            <div class="text-center pt-2">
+              <button onclick="toggleToLogin()" class="text-sm text-indigo-600 font-bold hover:underline">כבר יש לי חשבון, חזרה למסך הכניסה</button>
+            </div>
+          </div>
+
+          <div id="step2" class="step space-y-5">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">שם המשפחה שלכם</label>
+              <input id="familyNameInput" type="text" placeholder="למשל: משפחת ישראלי" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">מספר טלפון</label>
+              <input id="phoneInput" type="tel" placeholder="למשל: 0501234567" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-left" style="direction: ltr;">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-2">בחרו את המטבע הראשי</label>
+              <div class="grid grid-cols-3 gap-3">
+                <label onclick="selectCurrency(this, '₪')" class="currency-label border-2 border-indigo-600 bg-indigo-50/40 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition">
+                  <input type="radio" name="currency" value="₪" checked class="sr-only">
+                  <span class="text-xl font-bold text-slate-800">₪</span>
+                </label>
+                <label onclick="selectCurrency(this, '$')" class="currency-label border border-slate-300 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition">
+                  <input type="radio" name="currency" value="$" class="sr-only">
+                  <span class="text-xl font-bold text-slate-800">$</span>
+                </label>
+                <label onclick="selectCurrency(this, '€')" class="currency-label border border-slate-300 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition">
+                  <input type="radio" name="currency" value="€" class="sr-only">
+                  <span class="text-xl font-bold text-slate-800">€</span>
+                </label>
+              </div>
+            </div>
+            <div class="flex gap-3 pt-2">
+              <button onclick="goToStep(1)" class="w-1/3 py-3 px-4 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">חזרה</button>
+              <button onclick="goToStep(3)" class="w-2/3 py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">המשך</button>
+            </div>
+          </div>
+
+          <div id="step3" class="step space-y-5">
+            <label class="block text-sm font-semibold text-slate-700 mb-1">סמנו קטגוריות מעקב:</label>
+            <div class="grid grid-cols-2 gap-3">
+              <div onclick="toggleCategory(this)" class="border border-indigo-600 bg-indigo-50/40 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-all select-none font-medium">🛒 סופרמרקט</div>
+              <div onclick="toggleCategory(this)" class="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:border-indigo-300 transition-all select-none font-medium">🚗 תחבורה</div>
+              <div onclick="toggleCategory(this)" class="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:border-indigo-300 transition-all select-none font-medium">🏠 מדור</div>
+              <div onclick="toggleCategory(this)" class="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:border-indigo-300 transition-all select-none font-medium">💰 כללי</div>
+            </div>
+            <div class="flex gap-3 pt-2">
+              <button onclick="goToStep(2)" class="w-1/3 py-3 px-4 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">חזרה</button>
+              <button onclick="finishRegistration()" class="w-2/3 py-3 px-4 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition">סיום והקמת החשבון!</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <div id="dashboardPage" class="page w-full min-h-screen flex flex-col md:flex-row">
+    
+    <!-- סרגל ניווט צדדי -->
+    <aside class="w-full md:w-64 bg-slate-900 text-slate-200 p-6 flex flex-col justify-between no-print shadow-xl shrink-0">
+      <div class="space-y-6">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div class="flex flex-col">
+            <span class="text-2xl font-black text-white tracking-wider">FamilyCent</span>
+            <span id="navFamilyName" class="text-indigo-400 text-xs mt-1 font-semibold">משפחת ישראלי</span>
+          </div>
+        </div>
+        
+        <nav class="space-y-2">
+          <button id="btnTabMain" onclick="switchTab('main')" class="w-full text-right px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md transition flex items-center gap-2">📊 לוח בקרה ראשי</button>
+          <button id="btnTabReports" onclick="switchTab('reports')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">📋 ארכיון דוחות אישיים</button>
+          <button id="btnTabBudgets" onclick="switchTab('budgets')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">🎯 תקציבים ויעדים</button>
+          
+          <!-- כפתור ניווט למנהל בלבד -->
+          <button id="btnTabAdmin" onclick="switchTab('admin')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-amber-400 hover:text-amber-300 hidden">🔑 פאנל מנהל מערכת</button>
+          
+          <button onclick="openProfileModal()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">⚙️ אזור אישי והגדרות</button>
+          <button onclick="openBackupModal()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">💾 גיבוי ושחזור</button>
+          <button onclick="openImportExcelModal()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">📊 ייבוא מאקסל</button>
+          <button id="darkModeToggleBtn" onclick="toggleDarkMode()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">🌙 מצב כהה</button>
+          <button onclick="logout()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-rose-950/40 text-rose-400 font-medium transition flex items-center gap-2">🔓 התנתק מהמערכת</button>
+        </nav>
+      </div>
+    </aside>
+
+    <!-- כפתור צף - תמיד גלוי על המסך, גם בגלילה למטה -->
+    <button onclick="openModal()" class="fixed bottom-6 left-6 md:bottom-8 md:left-8 z-40 w-16 h-16 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-3xl font-bold shadow-2xl flex items-center justify-center transition transform hover:scale-105 active:scale-95 no-print" title="הוספת פעולה חדשה">
+      +
+    </button>
+
+    <!-- תוכן מרכזי לפי לשוניות -->
+    <main class="flex-1 p-4 sm:p-8 overflow-y-auto">
+      
+      <!-- לשונית א: לוח בקרה ראשי (הזנת נתונים שוטפת) -->
+      <div id="tabContentMain" class="tab-content active">
+        <div id="budgetAlertBanner" class="hidden mb-6 no-print"></div>
+        <div class="bg-gradient-to-l from-indigo-50 to-white border border-indigo-100 rounded-2xl p-5 mb-6 no-print">
+          <h3 class="text-sm font-bold text-indigo-700 mb-2 flex items-center gap-1">💡 תובנות חכמות</h3>
+          <div id="insightsCard"></div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8 no-print">
+          <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">נשאר לכם בחשבון</p>
+            <p class="text-3xl font-extrabold text-slate-900 mt-2"><span class="currencySymbol">₪</span> <span id="netoDisplay">0</span></p>
+          </div>
+          <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md border-r-4 border-r-emerald-500">
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">סך הכנסות חודשי</p>
+            <p class="text-3xl font-extrabold text-emerald-600 mt-2"><span class="currencySymbol">₪</span> <span id="incomeDisplay">0</span></p>
+          </div>
+          <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md border-r-4 border-r-rose-500">
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">סך הוצאות חודשי</p>
+            <p class="text-3xl font-extrabold text-rose-500 mt-2"><span class="currencySymbol">₪</span> <span id="expenseDisplay">0</span></p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 no-print">
+          <div class="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4 mb-4">
+              <h3 class="text-lg font-bold text-slate-900">תנועות ועו"ש משפחתי</h3>
+              <div class="flex items-center gap-2">
+                <button onclick="exportToCSV()" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition">📥 אקסל CSV</button>
+                <button onclick="generatePrintReport()" class="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition">🖨️ הדפסת רשימה</button>
+              </div>
+            </div>
+
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/60 mb-6 space-y-3">
+              <div class="relative">
+                <input id="filterSearchText" type="text" oninput="updateUI()" placeholder="🔍 חיפוש חופשי לפי תיאור או הערה..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-indigo-500">
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 items-end">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-500 mb-1">מתאריך</label>
+                  <input id="filterFromDate" type="date" onchange="updateUI()" class="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs bg-white focus:outline-indigo-500">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-500 mb-1">עד תאריך</label>
+                  <input id="filterToDate" type="date" onchange="updateUI()" class="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs bg-white focus:outline-indigo-500">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-500 mb-1">קטגוריה</label>
+                  <select id="filterCategory" onchange="updateUI()" class="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs bg-white focus:outline-indigo-500">
+                    <option value="all">הכל</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-500 mb-1">מיון</label>
+                  <select id="sortOrderSelect" onchange="updateUI()" class="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs bg-white focus:outline-indigo-500">
+                    <option value="date_desc">תאריך: חדש לישן</option>
+                    <option value="date_asc">תאריך: ישן לחדש</option>
+                    <option value="amount_desc">סכום: גבוה לנמוך</option>
+                    <option value="amount_asc">סכום: נמוך לגבוה</option>
+                    <option value="category_asc">קטגוריה (א-ת)</option>
+                  </select>
+                </div>
+                <div class="flex gap-1 items-end">
+                  <div class="w-full">
+                    <label class="block text-[11px] font-bold text-slate-500 mb-1">סוג</label>
+                    <select id="filterType" onchange="updateUI()" class="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs bg-white focus:outline-indigo-500">
+                      <option value="all">הכל</option>
+                      <option value="expense">הוצאה</option>
+                      <option value="income">הכנסה</option>
+                    </select>
+                  </div>
+                  <button onclick="clearFilters()" class="p-1 text-slate-400 hover:text-rose-500 text-xs transition mb-0.5" title="ניקוי מסננים">❌</button>
+                </div>
+              </div>
+            </div>
+            
+            <div id="transactionsList" class="divide-y divide-slate-100">
+              <p class="text-slate-400 text-sm py-4 text-center">אין עדיין פעולות בחשבון.</p>
+            </div>
+          </div>
+          
+          <div class="space-y-6">
+            <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
+              <h3 class="text-lg font-bold text-slate-900 mb-4">📊 פילוח הוצאות חודשי</h3>
+              <div class="relative w-full max-w-[210px] mx-auto mb-4">
+                <canvas id="expensesChart"></canvas>
+              </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md border-t-4 border-t-indigo-500">
+              <h3 class="text-lg font-bold text-slate-900 mb-1">📅 פילוח הוצאות חכם שנתי</h3>
+              <p class="text-[11px] text-slate-400 mb-4">ריכוז כלל ההוצאות לפי קטגוריות מתחילת השנה הנוכחית</p>
+              <div class="relative w-full max-w-[210px] mx-auto mb-4">
+                <canvas id="yearlyExpensesChart"></canvas>
+              </div>
+              <div id="yearlySummaryText" class="text-xs text-slate-600 mt-2 space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100"></div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
+              <h3 class="text-lg font-bold text-slate-900 mb-2">📋 הפקה מהירה</h3>
+              <div class="grid grid-cols-2 gap-2">
+                <button onclick="generatePeriodicReport('month')" class="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition shadow-sm">📊 דוח חודש שוטף</button>
+                <button onclick="generatePeriodicReport('year')" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs transition shadow-sm">📅 דוח שנה שוטפת</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md mt-8 no-print">
+          <button type="button" onclick="toggleTrendChart()" class="w-full flex justify-between items-center text-right">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900 mb-1">📈 השוואת הכנסות והוצאות - 6 חודשים אחרונים</h3>
+              <p class="text-[11px] text-slate-400">מגמת התקציב המשפחתי לאורך זמן (לחצו להצגה/הסתרה)</p>
+            </div>
+            <span id="trendChartToggleIcon" class="text-slate-400 text-2xl transition-transform duration-200">▾</span>
+          </button>
+          <div id="trendChartWrapper" class="relative w-full h-64 mt-4 hidden">
+            <canvas id="trendChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- לשונית ב: לוח בקרה ואומדן דוחות אישיים -->
+      <div id="tabContentReports" class="tab-content">
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md mb-8">
+          <div class="flex justify-between items-center border-b border-slate-100 pb-4 mb-4">
+            <div>
+              <h2 class="text-xl font-bold text-slate-900">📋 לוח בקרה: דוחות תקופתיים קבועים</h2>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="openManualReportModal('month')" class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs transition">⚙️ סגור והפק חודש ידנית</button>
+              <button onclick="openManualReportModal('year')" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition">⚙️ סגור והפק שנה ידנית</button>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 mb-3">
+            <input type="checkbox" id="showOldReportsCheckbox" onchange="renderArchivedReportsTable()" class="w-4 h-4 text-indigo-600 rounded">
+            <label for="showOldReportsCheckbox" class="text-xs font-semibold text-slate-500">הצג גם דוחות ישנים משישה חודשים</label>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-right border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600">
+                  <th class="p-3">שם הדוח / תקופה</th>
+                  <th class="p-3">סוג</th>
+                  <th class="p-3">סה"כ הכנסות</th>
+                  <th class="p-3">סה"כ הוצאות</th>
+                  <th class="p-3">יתרה סופית (נטו)</th>
+                  <th class="p-3 text-left">פעולות</th>
+                </tr>
+              </thead>
+              <tbody id="archivedReportsTableBody" class="divide-y divide-slate-100 text-sm text-slate-700"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- לשונית: תקציבים ויעדי חיסכון -->
+      <div id="tabContentBudgets" class="tab-content">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
+            <h2 class="text-xl font-bold text-slate-900 mb-1">🎯 תקציב חודשי לפי קטגוריה</h2>
+            <p class="text-[11px] text-slate-400 mb-4">הגדירו סכום תקציב מקסימלי לכל קטגוריה, ותקבלו התראה כשחורגים ממנו.</p>
+            <div id="budgetCategoriesList" class="space-y-3"></div>
+          </div>
+
+          <div class="space-y-8">
+            <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
+              <h2 class="text-xl font-bold text-slate-900 mb-1">🏆 יעדי חיסכון משפחתיים</h2>
+              <p class="text-[11px] text-slate-400 mb-4">הגדירו יעד חיסכון ועקבו אחרי ההתקדמות</p>
+              <div class="flex gap-2 mb-4">
+                <input id="goalNameInput" type="text" placeholder="שם היעד (למשל: חופשה בקיץ)" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm">
+                <input id="goalTargetInput" type="number" placeholder="סכום יעד" class="w-32 px-3 py-2 border border-slate-300 rounded-xl text-sm">
+                <button onclick="addSavingsGoal()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap">➕ הוסף</button>
+              </div>
+              <div id="savingsGoalsList" class="space-y-3"></div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
+              <div class="flex justify-between items-start gap-2 mb-1">
+                <h2 class="text-xl font-bold text-slate-900">🔁 פעולות קבועות (חוזרות מדי חודש)</h2>
+                <button onclick="sendReminderDigestEmail()" class="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold whitespace-nowrap transition">📧 שלח תזכורות במייל</button>
+              </div>
+              <p class="text-[11px] text-slate-400 mb-4">הוסיפו פעולה קבועה חדשה דרך כפתור "+ פעולה חדשה" וסמנו את התיבה "הפוך לפעולה קבועה". הפעולות ייווצרו אוטומטית מדי חודש.</p>
+              <div id="recurringList" class="space-y-2"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- לשונית ג: פאנל מנהל מערכת -->
+      <div id="tabContentAdmin" class="tab-content">
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md mb-6">
+          <h2 class="text-xl font-bold text-slate-900 mb-2">🔑 פאנל מנהל מערכת ראשי</h2>
+          <p class="text-xs text-slate-500 mb-4">ניהול, בקרה, צפייה בסיסמאות וגישה לדוחות של כל המשתמשים הרשומים באפליקציה.</p>
+          
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/60 mb-6 max-w-md">
+            <label class="block text-xs font-bold text-slate-700 mb-2">➕ הוספת / מינוי מנהל חדש למערכת</label>
+            <div class="flex gap-2">
+              <div class="relative w-full">
+                <input id="adminNewEmailInput" type="email" placeholder="user@example.com" oninput="handleEmailAutocomplete(this)" onblur="handleEmailBlur(this)" autocomplete="off" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-left" style="direction: ltr;">
+              </div>
+              <button onclick="addAdminPrivilege()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition whitespace-nowrap">מנה מנהל</button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-right border-collapse">
+              <thead>
+                <tr class="bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-600">
+                  <th class="p-3">משפחה</th>
+                  <th class="p-3">אימייל (שם משתמש)</th>
+                  <th class="p-3">טלפון</th>
+                  <th class="p-3">סיסמה במערכת</th>
+                  <th class="p-3">סוג משתמש</th>
+                  <th class="p-3 text-left">פעולות מנהל</th>
+                </tr>
+              </thead>
+              <tbody id="adminUsersTableBody" class="divide-y divide-slate-100 text-sm text-slate-700"></tbody>
+            </table>
+          </div>
+        </div>
+        
+        <!-- אזור צפייה בדוחות משתמש ספציפי עבור המנהל -->
+        <div id="adminUserReportsSection" class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md hidden">
+          <div class="flex justify-between items-center border-b pb-3 mb-4">
+            <h3 class="font-bold text-slate-900">📋 דוחות מאורכבים עבור: <span id="adminTargetUserTitle" class="text-indigo-600"></span></h3>
+            <button onclick="document.getElementById('adminUserReportsSection').classList.add('hidden')" class="text-xs text-rose-500 font-bold hover:underline">סגור תצוגה ✕</button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-right border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-50 border-b text-slate-500 font-bold">
+                  <th class="p-2">שם הדוח</th>
+                  <th class="p-2">הכנסות</th>
+                  <th class="p-2">הוצאות</th>
+                  <th class="p-2">יתרה</th>
+                  <th class="p-2 text-left">פעולה</th>
+                </tr>
+              </thead>
+              <tbody id="adminUserReportsTableBody" class="divide-y text-slate-700"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- אזור להדפסה ותצוגת דוחות -->
+  <div id="printReportArea" class="hidden fixed inset-0 bg-white z-50 overflow-y-auto p-8 text-slate-900"></div>
+
+  <!-- מודל מעוצב: הפקת דוח ידני (מחליף את ה-Prompt) -->
+  <div id="manualReportModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden p-6 space-y-4">
+      <div class="border-b border-slate-200 pb-2">
+        <h3 id="manualReportModalTitle" class="font-bold text-lg text-slate-900">הפקת דוח ידני</h3>
+      </div>
+      <div class="space-y-3">
+        <div id="manualMonthContainer">
+          <label for="manualMonthSelect" class="block text-xs font-semibold text-slate-600 mb-1">בחרו חודש</label>
+          <select id="manualMonthSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white focus:ring-indigo-500 focus:border-indigo-500">
+            <option value="1">ינואר (01)</option>
+            <option value="2">פברואר (02)</option>
+            <option value="3">מרץ (03)</option>
+            <option value="4">אפריל (04)</option>
+            <option value="5">מאי (05)</option>
+            <option value="6">יוני (06)</option>
+            <option value="7">יולי (07)</option>
+            <option value="8">אוגוסט (08)</option>
+            <option value="9">ספטמבר (09)</option>
+            <option value="10">אוקטובר (10)</option>
+            <option value="11">נובמבר (11)</option>
+            <option value="12">דצמבר (12)</option>
+          </select>
+        </div>
+        <div>
+          <label for="manualYearInput" class="block text-xs font-semibold text-slate-600 mb-1">שנה</label>
+          <input id="manualYearInput" type="number" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm font-semibold focus:ring-indigo-500 focus:border-indigo-500">
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2 justify-end border-t border-slate-100">
+        <button onclick="closeManualReportModal()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">ביטול</button>
+        <button onclick="submitManualReport()" class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">הפק דוח</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- מודל עריכת משתמש על ידי מנהל -->
+  <div id="adminEditUserModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden p-6 space-y-5">
+      <div class="border-b border-slate-200 pb-3 flex justify-between items-center">
+        <h3 class="font-bold text-xl text-slate-900">✏️ עריכת פרטי משתמש (מנהל)</h3>
+        <button onclick="closeAdminEditUserModal()" class="text-slate-400 hover:text-slate-600 text-xl">✕</button>
+      </div>
+      <div class="space-y-3 pt-2">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">אימייל (מפתח חשבון - לא ניתן לשינוי)</label>
+          <input id="adminEditUserEmail" type="email" disabled class="w-full px-3 py-2 border border-slate-200 bg-slate-100 rounded-xl text-slate-500 text-sm text-left" style="direction: ltr;">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">שם משפחה</label>
+          <input id="adminEditUserFamilyName" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">מספר טלפון</label>
+          <input id="adminEditUserPhone" type="tel" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-left" style="direction: ltr;">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">סיסמה במערכת</label>
+          <input id="adminEditUserPassword" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-left font-mono" style="direction: ltr;">
+        </div>
+        <div class="flex items-center gap-2 pt-2">
+          <input id="adminEditUserIsAdmin" type="checkbox" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500">
+          <label for="adminEditUserIsAdmin" class="text-xs font-semibold text-slate-700">הרשאות מנהל מערכת (Admin)</label>
+        </div>
+      </div>
+      <div class="flex gap-3 pt-3 border-t border-slate-100 justify-end">
+        <button onclick="closeAdminEditUserModal()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">ביטול</button>
+        <button onclick="saveAdminEditedUser()" class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">שמור שינויים</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- מודל הגדרות ואזור אישי -->
+  <div id="profileModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden p-6 space-y-5">
+      <div class="border-b border-slate-200 pb-3 flex justify-between items-center">
+        <h3 class="font-bold text-xl text-slate-900">⚙️ אזור אישי והגדרות</h3>
+        <button onclick="closeProfileModal()" class="text-slate-400 hover:text-slate-600 text-xl">✕</button>
+      </div>
+      <div class="space-y-3 pt-2">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">כתובת אימייל (לא ניתן לשינוי כאן)</label>
+            <div class="relative">
+              <input id="profileEmail" type="email" disabled class="w-full px-3 py-2 border border-slate-200 bg-slate-100 rounded-xl text-slate-500 text-sm text-left" style="direction: ltr;">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">שם משפחה</label>
+            <input id="profileFamilyName" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">מספר טלפון</label>
+            <input id="profilePhone" type="tel" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-left" style="direction: ltr;">
+          </div>
+          <div class="relative">
+            <label class="block text-xs font-semibold text-slate-600 mb-1">סיסמה חדשה (השאירו ריק אם לא רוצים לשנות)</label>
+            <input id="profilePassword" type="password" placeholder="השאירו ריק כדי לא לשנות" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-left pl-8" style="direction: ltr;">
+            <button type="button" id="toggleProfilePassword" class="absolute left-2 top-7 text-xs focus:outline-none">👁️</button>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-3 pt-3 border-t border-slate-100 justify-end">
+        <button onclick="closeProfileModal()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">סגור</button>
+        <button onclick="updateProfileData()" class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">שמור שינויים</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- מודל גיבוי ושחזור -->
+  <div id="backupModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden p-6 space-y-5">
+      <div class="border-b border-slate-200 pb-3 flex justify-between items-center">
+        <h3 class="font-bold text-xl text-slate-900">💾 גיבוי ושחזור נתונים</h3>
+        <button onclick="closeBackupModal()" class="text-slate-400 hover:text-slate-600 text-xl">✕</button>
+      </div>
+      <div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-xs">
+        ⚠️ כל הנתונים הכספיים שלכם (עסקאות, תקציבים, יעדים, קטגוריות, פעולות קבועות וארכיון דוחות) שמורים בענן ומאובטחים אוטומטית - אין צורך לגבות אותם ידנית. הכפתור כאן מגבה רק הגדרות מקומיות של הדפדפן הזה בלבד (מצב כהה).
+      </div>
+      <div class="space-y-2">
+        <button onclick="exportFullBackup()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition">⬇️ ייצוא גיבוי מלא (JSON)</button>
+        <label class="w-full block">
+          <span class="w-full block text-center py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl transition cursor-pointer">⬆️ ייבוא ושחזור מגיבוי</span>
+          <input type="file" accept=".json,application/json" onchange="importFullBackup(this)" class="hidden">
+        </label>
+      </div>
+      <div class="flex justify-end pt-2 border-t border-slate-100">
+        <button onclick="closeBackupModal()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">סגור</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- מודל ייבוא תנועות מאקסל -->
+  <div id="importExcelModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden p-6 space-y-5">
+      <div class="border-b border-slate-200 pb-3 flex justify-between items-center">
+        <h3 class="font-bold text-xl text-slate-900">📊 ייבוא תנועות מאקסל</h3>
+        <button onclick="closeImportExcelModal()" class="text-slate-400 hover:text-slate-600 text-xl">✕</button>
+      </div>
+      <p class="text-sm text-slate-500">העלו קובץ Excel/CSV של חשבון האשראי או הבנק שלכם (למשל ייצוא מ-Cal, ישראכרט, מקס). המערכת תזהה אוטומטית עמודות של תאריך, תיאור וסכום.</p>
+      <label class="w-full block">
+        <span class="w-full block text-center py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl transition cursor-pointer">📁 בחירת קובץ</span>
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" onchange="handleExcelFileSelect(this)" class="hidden">
+      </label>
+      <p id="importPreviewText" class="text-sm font-semibold text-slate-700 text-center"></p>
+      <button id="confirmImportBtn" onclick="confirmExcelImport()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition hidden">✅ אישור ייבוא</button>
+      <div class="flex justify-end pt-2 border-t border-slate-100">
+        <button onclick="closeImportExcelModal()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">סגור</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- מודל קביעת סיסמה חדשה (נפתח אוטומטית אחרי לחיצה על קישור איפוס סיסמה מהמייל) -->
+  <div id="resetPasswordModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden p-6 space-y-5">
+      <h3 class="font-bold text-xl text-slate-900">🔑 קביעת סיסמה חדשה</h3>
+      <p class="text-sm text-slate-500">הזינו סיסמה חדשה לחשבון שלכם.</p>
+      <input id="newResetPasswordInput" type="password" placeholder="סיסמה חדשה (6 תווים לפחות)" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-left" style="direction: ltr;">
+      <button onclick="submitNewPassword()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition">שמור סיסמה חדשה</button>
+    </div>
+  </div>
+
+
+  <!-- מודל הוספת/עריכת פעולה -->
+  <div id="expenseModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden p-6 space-y-4">
+      <h3 id="modalActionTitle" class="font-bold text-lg text-slate-900">הוספת פעולה חדשה לתקציב</h3>
+      <div>
+        <button type="button" id="scanReceiptBtn" onclick="triggerReceiptUpload()" class="w-full bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-xl py-2.5 text-sm font-bold transition">📷 מלא אוטומטית מצילום חשבונית</button>
+        <input type="file" id="receiptFileInput" accept="image/*" onchange="handleReceiptUpload(this)" class="hidden">
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">סוג הפעולה</label>
+        <select id="actionTypeInput" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl bg-white">
+          <option value="הוצאה 📉">הוצאה 📉</option>
+          <option value="הכנסה 📈">הכנסה 📈</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">סכום</label>
+        <input id="amountInput" type="number" placeholder="0.00" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl font-semibold">
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">תיאור / עסק</label>
+        <input id="descriptionInput" type="text" placeholder="למשל: סופר, משכורת, דלק..." class="w-full px-4 py-2.5 border border-slate-300 rounded-xl">
+      </div>
+      <div id="recurringOptionWrapper" class="flex items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+        <input type="checkbox" id="isRecurringInput" class="w-4 h-4 text-indigo-600 rounded">
+        <label for="isRecurringInput" class="text-xs font-semibold text-slate-700 flex-1">🔁 הפוך לפעולה קבועה (תחזור אוטומטית כל חודש)</label>
+        <input type="number" id="recurringDayInput" min="1" max="28" placeholder="יום בחודש" value="1" class="w-20 px-2 py-1 border border-slate-300 rounded-lg text-xs">
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">הערות (אופציונלי)</label>
+        <textarea id="notesInput" rows="2" placeholder="למשל: קניתי במבצע, לבדוק אם הוחזר כסף..." class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm"></textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">קטגוריה</label>
+        <div class="flex gap-2">
+          <select id="categoryInput" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl bg-white"></select>
+          <button type="button" onclick="aiSuggestCategory(this)" class="bg-violet-50 hover:bg-violet-100 text-violet-700 px-3 border border-violet-200 rounded-xl text-xs font-bold" title="הצע קטגוריה עם AI">🤖</button>
+          <button onclick="deleteSelectedCategory()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 border border-rose-200 rounded-xl text-xs font-bold" title="מחק קטגוריה נבחרת">🗑️</button>
+        </div>
+      </div>
+      <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+        <label class="block text-xs font-bold text-slate-600">➕ הוספת קטגוריה חדשה לרשימה</label>
+        <div class="flex gap-2">
+          <input id="newCategoryInput" type="text" placeholder="למשל: 🎁 מתנות" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm">
+          <button onclick="addNewCategory()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap">הוסף</button>
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2 justify-end">
+        <button onclick="closeModal()" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">ביטול</button>
+        <button onclick="saveTransaction()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">שמור במערכת</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* --- מיגרציה חד-פעמית: נרמול כתובות מייל לאותיות קטנות בכל מקום שבו הן משמשות מפתח --- */
+    function normalizeEmailKeysMigration() {
+      let users = getStoredUsers();
+      let normalizedUsers = {};
+      let changed = false;
+      Object.keys(users).forEach(k => {
+        const lower = k.toLowerCase();
+        const rec = users[k];
+        if (rec && typeof rec === 'object') { rec.email = lower; }
+        if (!normalizedUsers[lower]) { normalizedUsers[lower] = rec; }
+        if (lower !== k) changed = true;
+      });
+      if (changed) saveStoredUsers(normalizedUsers);
+
+      ['fc_budgets', 'fc_goals', 'fc_recurring', 'fc_email_settings', 'fc_ai_settings', 'fc_categories'].forEach(storeKey => {
+        const raw = localStorage.getItem(storeKey);
+        if (!raw) return;
+        let obj;
+        try { obj = JSON.parse(raw); } catch (e) { return; }
+        let normalized = {};
+        let storeChanged = false;
+        Object.keys(obj).forEach(k => {
+          const lower = k.toLowerCase();
+          if (lower !== k) storeChanged = true;
+          if (!(lower in normalized)) normalized[lower] = obj[k];
+        });
+        if (storeChanged) localStorage.setItem(storeKey, JSON.stringify(normalized));
+      });
+
+      ['fc_transactions', 'fc_reports'].forEach(storeKey => {
+        const raw = localStorage.getItem(storeKey);
+        if (!raw) return;
+        let arr;
+        try { arr = JSON.parse(raw); } catch (e) { return; }
+        if (!Array.isArray(arr)) return;
+        let arrChanged = false;
+        arr.forEach(rec => {
+          if (rec && rec.email && rec.email !== rec.email.toLowerCase()) { rec.email = rec.email.toLowerCase(); arrChanged = true; }
+        });
+        if (arrChanged) localStorage.setItem(storeKey, JSON.stringify(arr));
+      });
+    }
+    /* --- סוף מיגרציה --- */
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      normalizeEmailKeysMigration();
+      initDarkMode();
+      /* ניקוי חד-פעמי: הסרת חשבון "מנהל ברירת מחדל" ישן שנשאר משמורת דפדפן קודמת (ממערכת ההתחברות המקומית הישנה) */
+      let users = getStoredUsers();
+      const legacyAdmin = users['admin@familycent.com'];
+      if (legacyAdmin && legacyAdmin.password === 'admin' && legacyAdmin.familyName === 'ניהול מערכת' && legacyAdmin.phone === '0500000000') {
+        delete users['admin@familycent.com'];
+        saveStoredUsers(users);
+      }
+
+      renderCategoryOptions();
+      updateFilterCategoryDropdown();
+
+      const toggleProfilePassword = document.getElementById('toggleProfilePassword');
+      const profilePasswordInput = document.getElementById('profilePassword');
+      if (toggleProfilePassword && profilePasswordInput) {
+        toggleProfilePassword.addEventListener('click', function() {
+          const type = profilePasswordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+          profilePasswordInput.setAttribute('type', type);
+          this.textContent = type === 'password' ? '👁️' : '🙈';
+        });
+      }
+
+      /* שחזור התחברות אוטומטי אם יש כבר session פעיל מ-Supabase (למשל אחרי רענון דף) */
+      const { data: { session } } = await sb.auth.getSession();
+      if (session && session.user) {
+        await completeLoginFlow(session.user);
+      }
+    });
+
+    function getStoredUsers() { return JSON.parse(localStorage.getItem('fc_users') || '{}'); }
+    function saveStoredUsers(users) { localStorage.setItem('fc_users', JSON.stringify(users)); }
+    async function loadTransactionsLocal() {
+      const { data, error } = await sb.from('transactions').select('*').eq('user_id', currentUserId).order('occurred_at', { ascending: false });
+      if (error) {
+        console.error(error);
+        localTransactions = [];
+      } else {
+        localTransactions = data.map(t => ({
+          id: t.id, actionType: t.action_type, amount: t.amount,
+          description: t.description, category: t.category, notes: t.notes,
+          timestamp: t.occurred_at
+        }));
+      }
+      updateUI();
+    }
+
+    function getStoredTransactions() { return JSON.parse(localStorage.getItem('fc_transactions') || '[]'); }
+    function saveStoredTransactions(txs) { localStorage.setItem('fc_transactions', JSON.stringify(txs)); }
+
+    /* --- ארכיון דוחות: נשמר ב-Supabase --- */
+    async function loadUserReports() {
+      const { data, error } = await sb.from('reports').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false });
+      if (error) { console.error(error); generatedReports = []; return; }
+      generatedReports = data.map(r => ({
+        id: r.id, email: currentUserEmail, reportName: r.report_name,
+        reportType: r.report_type, targetMonth: r.target_month, targetYear: r.target_year,
+        totalIncome: r.total_income, totalExpense: r.total_expense, neto: r.neto,
+        breakdown: r.breakdown, transactionsSnapshot: r.transactions_snapshot || [],
+        generatedAt: r.created_at
+      }));
+    }
+
+    /* --- תקציבים: נשמר ב-Supabase --- */
+    let userBudgetRows = [];
+    async function loadUserBudgets() {
+      const { data, error } = await sb.from('budgets').select('*').eq('user_id', currentUserId);
+      if (error) { console.error(error); userBudgetRows = []; return; }
+      userBudgetRows = data;
+    }
+    function getUserBudgets() {
+      const map = {};
+      userBudgetRows.forEach(r => { map[r.category] = r.limit_amount; });
+      return map;
+    }
+    async function saveCategoryBudget(category, limitVal) {
+      const limit = parseFloat(limitVal) || 0;
+      const existing = userBudgetRows.find(r => r.category === category);
+
+      if (limit > 0) {
+        if (existing) {
+          const { error } = await sb.from('budgets').update({ limit_amount: limit }).eq('id', existing.id);
+          if (error) { console.error(error); alert('שגיאה בשמירת התקציב.'); return; }
+          existing.limit_amount = limit;
+        } else {
+          const { data, error } = await sb.from('budgets').insert({ user_id: currentUserId, category, limit_amount: limit }).select().single();
+          if (error) { console.error(error); alert('שגיאה בשמירת התקציב.'); return; }
+          userBudgetRows.push(data);
+        }
+      } else if (existing) {
+        const { error } = await sb.from('budgets').delete().eq('id', existing.id);
+        if (error) { console.error(error); alert('שגיאה במחיקת התקציב.'); return; }
+        userBudgetRows = userBudgetRows.filter(r => r.id !== existing.id);
+      }
+      renderBudgetsTab();
+      checkBudgetAlerts();
+    }
+
+    /* --- יעדי חיסכון: נשמר ב-Supabase --- */
+    let userGoalRows = [];
+    async function loadUserGoals() {
+      const { data, error } = await sb.from('goals').select('*').eq('user_id', currentUserId).order('created_at');
+      if (error) { console.error(error); userGoalRows = []; return; }
+      userGoalRows = data;
+    }
+    function getUserGoals() {
+      return userGoalRows.map(g => ({ id: g.id, name: g.name, target: g.target, current: g.current }));
+    }
+    async function addSavingsGoal() {
+      const nameEl = document.getElementById('goalNameInput');
+      const targetEl = document.getElementById('goalTargetInput');
+      const name = nameEl.value.trim();
+      const target = parseFloat(targetEl.value);
+      if (!name || !target || target <= 0) { alert('אנא הזינו שם ליעד וסכום יעד תקין'); return; }
+
+      const { data, error } = await sb.from('goals').insert({ user_id: currentUserId, name, target, current: 0 }).select().single();
+      if (error) { console.error(error); alert('שגיאה בהוספת היעד.'); return; }
+      userGoalRows.push(data);
+      nameEl.value = ''; targetEl.value = '';
+      renderSavingsGoals();
+    }
+    async function addFundsToGoal(id) {
+      const amt = parseFloat(prompt('כמה כסף להוסיף ליעד זה?'));
+      if (!amt || amt <= 0) return;
+      const g = userGoalRows.find(x => x.id === id);
+      if (!g) return;
+      const newCurrent = g.current + amt;
+      const { error } = await sb.from('goals').update({ current: newCurrent }).eq('id', id);
+      if (error) { console.error(error); alert('שגיאה בעדכון היעד.'); return; }
+      g.current = newCurrent;
+      renderSavingsGoals();
+    }
+    async function deleteSavingsGoal(id) {
+      if (!confirm('האם למחוק יעד חיסכון זה?')) return;
+      const { error } = await sb.from('goals').delete().eq('id', id);
+      if (error) { console.error(error); alert('שגיאה במחיקת היעד.'); return; }
+      userGoalRows = userGoalRows.filter(g => g.id !== id);
+      renderSavingsGoals();
+    }
+
+    /* --- פעולות קבועות (חוזרות): נשמר ב-Supabase --- */
+    let userRecurringRows = [];
+    async function loadUserRecurring() {
+      const { data, error } = await sb.from('recurring').select('*').eq('user_id', currentUserId);
+      if (error) { console.error(error); userRecurringRows = []; return; }
+      userRecurringRows = data;
+    }
+    function getUserRecurring() {
+      return userRecurringRows.map(r => ({
+        id: r.id, actionType: r.action_type, amount: r.amount, description: r.description,
+        category: r.category, dayOfMonth: r.day_of_month, lastGenMonth: r.last_gen_month, lastGenYear: r.last_gen_year
+      }));
+    }
+    async function deleteRecurring(id) {
+      if (!confirm('למחוק פעולה קבועה זו? (פעולות שכבר נוצרו בעבר לא יימחקו)')) return;
+      const { error } = await sb.from('recurring').delete().eq('id', id);
+      if (error) { console.error(error); alert('שגיאה במחיקה.'); return; }
+      userRecurringRows = userRecurringRows.filter(r => r.id !== id);
+      renderRecurringList();
+    }
+    async function checkAndGenerateRecurringTransactions() {
+      if (userRecurringRows.length === 0) return;
+      const now = new Date();
+      const cm = now.getMonth(), cy = now.getFullYear();
+      let newTxRows = [];
+      let updatedRecurring = [];
+      userRecurringRows.forEach(r => {
+        if (r.last_gen_month === cm && r.last_gen_year === cy) return;
+        const day = Math.min(Math.max(parseInt(r.day_of_month) || 1, 1), 28);
+        if (now.getDate() < day) return;
+        newTxRows.push({
+          user_id: currentUserId, action_type: r.action_type, amount: r.amount,
+          description: r.description + ' (קבוע 🔁)', category: r.category,
+          occurred_at: new Date(cy, cm, day).toISOString()
+        });
+        r.last_gen_month = cm; r.last_gen_year = cy;
+        updatedRecurring.push(r.id);
+      });
+      if (newTxRows.length > 0) {
+        const { error } = await sb.from('transactions').insert(newTxRows);
+        if (error) console.error(error);
+      }
+      for (const id of updatedRecurring) {
+        const { error } = await sb.from('recurring').update({ last_gen_month: cm, last_gen_year: cy }).eq('id', id);
+        if (error) console.error(error);
+      }
+    }
+
+    function renderBudgetsTab() {
+      renderBudgetCategories();
+      renderSavingsGoals();
+      renderRecurringList();
+    }
+
+    function renderBudgetCategories() {
+      const container = document.getElementById('budgetCategoriesList');
+      if (!container) return;
+      const budgets = getUserBudgets();
+      const now = new Date();
+      let spentByCategory = {};
+      localTransactions.forEach(t => {
+        const d = new Date(t.timestamp);
+        if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.actionType && t.actionType.includes('הוצאה')) {
+          spentByCategory[t.category] = (spentByCategory[t.category] || 0) + (parseFloat(t.amount) || 0);
+        }
+      });
+      container.innerHTML = '';
+      customCategories.forEach((cat, idx) => {
+        const limit = budgets[cat] || 0;
+        const spent = spentByCategory[cat] || 0;
+        const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
+        const overBudget = limit > 0 && spent > limit;
+        const barColor = overBudget ? 'bg-rose-500' : (pct > 80 ? 'bg-amber-500' : 'bg-emerald-500');
+        const safeCat = cat.replace(/'/g, "\\'");
+        container.insertAdjacentHTML('beforeend', `
+          <div class="p-3 border ${overBudget ? 'bg-rose-50/60 border-rose-200' : 'border-slate-200'} rounded-xl">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-semibold text-sm">${cat}</span>
+              <span class="text-xs ${overBudget ? 'text-rose-600 font-bold' : 'text-slate-500'}">${currentUserCurrency}${spent.toLocaleString()}${limit > 0 ? ' / ' + currentUserCurrency + limit.toLocaleString() : ''} ${overBudget ? '⚠️' : ''}</span>
+            </div>
+            ${limit > 0 ? `<div class="w-full bg-slate-100 rounded-full h-2 mb-2"><div class="${barColor} h-2 rounded-full transition-all" style="width:${pct}%"></div></div>` : ''}
+            <div class="flex gap-2">
+              <input type="number" id="budgetInput_${idx}" placeholder="הגדירו תקציב חודשי" value="${limit || ''}" class="w-full px-2 py-1 border border-slate-300 rounded-lg text-xs">
+              <button onclick="saveCategoryBudget('${safeCat}', document.getElementById('budgetInput_${idx}').value)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap">שמור</button>
+            </div>
+          </div>
+        `);
+      });
+    }
+
+    function renderSavingsGoals() {
+      const container = document.getElementById('savingsGoalsList');
+      if (!container) return;
+      const goals = getUserGoals();
+      container.innerHTML = '';
+      if (goals.length === 0) {
+        container.innerHTML = '<p class="text-slate-400 text-sm text-center py-2">אין עדיין יעדי חיסכון. הוסיפו את היעד הראשון שלכם!</p>';
+        return;
+      }
+      goals.forEach(g => {
+        const pct = g.target > 0 ? Math.min(100, (g.current / g.target) * 100) : 0;
+        const done = g.current >= g.target;
+        container.insertAdjacentHTML('beforeend', `
+          <div class="p-3 border ${done ? 'bg-emerald-50/60 border-emerald-200' : 'border-slate-200'} rounded-xl">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-semibold text-sm">${done ? '🎉' : '🎯'} ${g.name}</span>
+              <span class="text-xs text-slate-500">${currentUserCurrency}${g.current.toLocaleString()} / ${currentUserCurrency}${g.target.toLocaleString()}</span>
+            </div>
+            <div class="w-full bg-slate-100 rounded-full h-2.5 mb-3">
+              <div class="${done ? 'bg-emerald-500' : 'bg-indigo-500'} h-2.5 rounded-full transition-all" style="width:${pct}%"></div>
+            </div>
+            <div class="flex gap-2 justify-end">
+              <button onclick="addFundsToGoal('${g.id}')" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold">💰 הוסף כסף</button>
+              <button onclick="deleteSavingsGoal('${g.id}')" class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold">🗑️ מחק</button>
+            </div>
+          </div>
+        `);
+      });
+    }
+
+    function renderRecurringList() {
+      const container = document.getElementById('recurringList');
+      if (!container) return;
+      const list = getUserRecurring();
+      container.innerHTML = '';
+      if (list.length === 0) {
+        container.innerHTML = '<p class="text-slate-400 text-sm text-center py-2">אין פעולות קבועות מוגדרות. הוסיפו פעולה חדשה וסמנו "פעולה קבועה".</p>';
+        return;
+      }
+      const now = new Date();
+      list.forEach(r => {
+        const isExp = r.actionType.includes('הוצאה');
+        const daysUntil = r.dayOfMonth - now.getDate();
+        const dueText = daysUntil >= 0 ? `🔔 עוד ${daysUntil} ימים` : `יופק בתחילת החודש הבא`;
+        container.insertAdjacentHTML('beforeend', `
+          <div class="flex justify-between items-center p-3 border border-slate-200 rounded-xl">
+            <div>
+              <span class="font-semibold text-sm">${r.description}</span>
+              <span class="text-xs text-slate-400 mr-2">(${r.category}) • כל ${r.dayOfMonth} לחודש • ${dueText}</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="font-bold text-sm ${isExp ? 'text-rose-500' : 'text-emerald-600'}">${isExp ? '-' : '+'}${currentUserCurrency}${parseFloat(r.amount).toLocaleString()}</span>
+              <button onclick="deleteRecurring('${r.id}')" class="text-slate-300 hover:text-rose-500 text-sm" title="מחק פעולה קבועה">🗑️</button>
+            </div>
+          </div>
+        `);
+      });
+    }
+
+    function checkBudgetAlerts() {
+      const banner = document.getElementById('budgetAlertBanner');
+      if (!banner) return;
+      const budgets = getUserBudgets();
+      if (Object.keys(budgets).length === 0) { banner.classList.add('hidden'); banner.innerHTML = ''; return; }
+      const now = new Date();
+      let spent = {};
+      localTransactions.forEach(t => {
+        const d = new Date(t.timestamp);
+        if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.actionType && t.actionType.includes('הוצאה')) {
+          spent[t.category] = (spent[t.category] || 0) + (parseFloat(t.amount) || 0);
+        }
+      });
+      let overCats = [];
+      Object.keys(budgets).forEach(cat => { if (budgets[cat] > 0 && (spent[cat] || 0) > budgets[cat]) overCats.push(cat); });
+      if (overCats.length === 0) { banner.classList.add('hidden'); banner.innerHTML = ''; return; }
+      banner.classList.remove('hidden');
+      banner.innerHTML = `<div class="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-4 text-sm font-semibold flex justify-between items-center flex-wrap gap-2"><span>⚠️ חריגה מהתקציב החודשי בקטגוריות: ${overCats.join(', ')}</span><span class="flex gap-3"><button onclick="sendReminderDigestEmail()" class="underline font-bold whitespace-nowrap">📧 שלח תזכורת במייל</button><button onclick="switchTab('budgets')" class="underline font-bold whitespace-nowrap">לצפייה בפירוט ←</button></span></div>`;
+    }
+
+    function toggleTrendChart() {
+      const wrapper = document.getElementById('trendChartWrapper');
+      const icon = document.getElementById('trendChartToggleIcon');
+      const isHidden = wrapper.classList.contains('hidden');
+      if (isHidden) {
+        wrapper.classList.remove('hidden');
+        icon.style.transform = 'rotate(180deg)';
+        renderTrendChart();
+      } else {
+        wrapper.classList.add('hidden');
+        icon.style.transform = 'rotate(0deg)';
+      }
+    }
+    function renderTrendChart() {
+      const chartEl = document.getElementById('trendChart');
+      if (!chartEl) return;
+      const wrapper = document.getElementById('trendChartWrapper');
+      if (wrapper && wrapper.classList.contains('hidden')) return;
+      const ctx = chartEl.getContext('2d');
+      if (myTrendChart !== null) { myTrendChart.destroy(); }
+      const monthNames = ["ינו", "פבר", "מרץ", "אפר", "מאי", "יונ", "יול", "אוג", "ספט", "אוק", "נוב", "דצמ"];
+      const now = new Date();
+      let labels = [], incomeData = [], expenseData = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        labels.push(monthNames[d.getMonth()] + " " + d.getFullYear());
+        let inc = 0, exp = 0;
+        localTransactions.forEach(t => {
+          const td = new Date(t.timestamp);
+          if (td.getMonth() === d.getMonth() && td.getFullYear() === d.getFullYear()) {
+            const amt = parseFloat(t.amount) || 0;
+            if (t.actionType && t.actionType.includes('הוצאה')) { exp += amt; } else { inc += amt; }
+          }
+        });
+        incomeData.push(inc); expenseData.push(exp);
+      }
+      myTrendChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [
+          { label: 'הכנסות', data: incomeData, backgroundColor: '#10b981', borderRadius: 6 },
+          { label: 'הוצאות', data: expenseData, backgroundColor: '#f43f5e', borderRadius: 6 }
+        ] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Assistant' } } } }, scales: { y: { beginAtZero: true } } }
+      });
+    }
+    /* --- אינטגרציות: שליחת מייל (EmailJS) והצעת קטגוריה עם AI --- */
+    /* --- שליחת מייל: דרך פונקציית שרת מאובטחת (/api/send-email), בלי הגדרות אישיות --- */
+    async function sendEmail(subject, message) {
+      try {
+        const response = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: currentUserEmail, subject, text: message })
+        });
+        const data = await response.json();
+        if (!response.ok) { throw new Error(data.error || 'שליחת המייל נכשלה'); }
+        alert('המייל נשלח בהצלחה! 📧');
+      } catch (err) {
+        console.error(err);
+        alert('שליחת המייל נכשלה: ' + err.message);
+      }
+    }
+
+    function sendTestEmail() {
+      sendEmail('FamilyCent - מייל בדיקה', 'זהו מייל בדיקה מאפליקציית FamilyCent. אם קיבלתם את זה, הכל תקין! ✅');
+    }
+
+    function buildReportEmailText(rep) {
+      let txt = `דוח: ${rep.reportName}\nחשבון: ${rep.email}\n\nסה"כ הכנסות: ${currentUserCurrency}${rep.totalIncome.toLocaleString()}\nסה"כ הוצאות: ${currentUserCurrency}${rep.totalExpense.toLocaleString()}\nיתרה נטו: ${currentUserCurrency}${rep.neto.toLocaleString()}\n\nפילוח לפי קטגוריות:\n`;
+      Object.keys(rep.breakdown).forEach(cat => { txt += `${cat}: ${currentUserCurrency}${rep.breakdown[cat].toLocaleString()}\n`; });
+      return txt;
+    }
+
+    function emailArchivedReport(reportId, useRawLast) {
+      let rep;
+      if (useRawLast) {
+        rep = window.__lastRawReport;
+        if (!rep) { alert('דוח לא נמצא.'); return; }
+      } else {
+        rep = generatedReports.find(r => r.id === reportId);
+        if (!rep) { alert('דוח לא נמצא.'); return; }
+      }
+      sendEmail(`FamilyCent - ${rep.reportName}`, buildReportEmailText(rep));
+    }
+
+    function sendReminderDigestEmail() {
+      const budgets = getUserBudgets();
+      const now = new Date();
+      let spent = {};
+      localTransactions.forEach(t => {
+        const d = new Date(t.timestamp);
+        if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.actionType && t.actionType.includes('הוצאה')) {
+          spent[t.category] = (spent[t.category] || 0) + (parseFloat(t.amount) || 0);
+        }
+      });
+      let lines = [];
+      Object.keys(budgets).forEach(cat => {
+        if (budgets[cat] > 0 && (spent[cat] || 0) > budgets[cat]) {
+          lines.push(`⚠️ חריגה בקטגוריה "${cat}": ${currentUserCurrency}${(spent[cat] || 0).toLocaleString()} מתוך תקציב ${currentUserCurrency}${budgets[cat].toLocaleString()}`);
+        }
+      });
+      const recurring = getUserRecurring();
+      recurring.forEach(r => {
+        const daysUntil = r.dayOfMonth - now.getDate();
+        const alreadyGenerated = r.lastGenMonth === now.getMonth() && r.lastGenYear === now.getFullYear();
+        if (daysUntil >= 0 && daysUntil <= 5 && !alreadyGenerated) {
+          lines.push(`🔔 פעולה קבועה קרובה: "${r.description}" (${currentUserCurrency}${r.amount}) בעוד ${daysUntil} ימים`);
+        }
+      });
+      if (lines.length === 0) { alert('אין כרגע התראות תקציב או תזכורות תשלום קרובות לשליחה.'); return; }
+      sendEmail('FamilyCent - תזכורות ועדכוני תקציב', lines.join('\n'));
+    }
+    /* --- סוף שליחת מייל --- */
+
+    /* --- AI: דרך פונקציית שרת מאובטחת (/api/ai-assist), בלי מפתח אישי --- */
+    async function aiSuggestCategory(btnEl) {
+      const desc = document.getElementById('descriptionInput').value.trim();
+      if (!desc) { alert('כתבו קודם תיאור לפעולה, ואז לחצו על הצעת הקטגוריה'); return; }
+
+      const original = btnEl.innerText;
+      btnEl.innerText = '⏳';
+      btnEl.disabled = true;
+
+      try {
+        const response = await fetch('/api/ai-assist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'suggest_category', description: desc, categories: customCategories })
+        });
+        const data = await response.json();
+        const suggestion = data.suggestion || '';
+        const match = customCategories.find(c => c === suggestion || suggestion.includes(c) || c.includes(suggestion));
+        if (match) {
+          document.getElementById('categoryInput').value = match;
+        } else {
+          alert('ה-AI לא הצליח להציע קטגוריה תואמת מהרשימה הקיימת. אפשר לנסח את התיאור אחרת ולנסות שוב.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('קריאה ל-AI נכשלה. נסו שוב.');
+      } finally {
+        btnEl.innerText = original;
+        btnEl.disabled = false;
+      }
+    }
+
+    function triggerReceiptUpload() {
+      document.getElementById('receiptFileInput').click();
+    }
+
+    async function handleReceiptUpload(inputEl) {
+      const file = inputEl.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64 = e.target.result.split(',')[1];
+        const btn = document.getElementById('scanReceiptBtn');
+        const original = btn.innerText;
+        btn.innerText = '⏳ סורק חשבונית...';
+        btn.disabled = true;
+        try {
+          const response = await fetch('/api/ai-assist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'parse_receipt', imageBase64: base64 })
+          });
+          const data = await response.json();
+          if (data.amount) document.getElementById('amountInput').value = data.amount;
+          if (data.description) document.getElementById('descriptionInput').value = data.description;
+          if (!data.amount && !data.description) {
+            alert('לא הצלחנו לזהות פרטים בתמונה. נסו תמונה ברורה יותר או מלאו ידנית.');
+          } else {
+            alert('הפרטים מולאו אוטומטית מהחשבונית - בדקו ואשרו לפני השמירה.');
+          }
+        } catch (err) {
+          console.error(err);
+          alert('סריקת החשבונית נכשלה. נסו שוב.');
+        } finally {
+          btn.innerText = original;
+          btn.disabled = false;
+          inputEl.value = '';
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+    /* --- סוף AI --- */
+
+    /* --- ייבוא תנועות מאקסל: לגמרי בצד הדפדפן, בלי שרת --- */
+    let pendingImportRows = [];
+
+    function openImportExcelModal() { document.getElementById('importExcelModal').classList.remove('hidden'); }
+    function closeImportExcelModal() {
+      document.getElementById('importExcelModal').classList.add('hidden');
+      document.getElementById('excelFileInput').value = '';
+      document.getElementById('importPreviewText').innerText = '';
+      document.getElementById('confirmImportBtn').classList.add('hidden');
+      pendingImportRows = [];
+    }
+
+    function findColumnKey(row, candidates) {
+      const keys = Object.keys(row);
+      for (const cand of candidates) {
+        const found = keys.find(k => k.trim() === cand);
+        if (found) return found;
+      }
+      for (const cand of candidates) {
+        const found = keys.find(k => k.includes(cand));
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function parseImportRows(rows) {
+      if (rows.length === 0) return [];
+      const sample = rows[0];
+      const dateKey = findColumnKey(sample, ['תאריך עסקה', 'תאריך רכישה', 'תאריך', 'Date']);
+      const descKey = findColumnKey(sample, ['שם בית עסק', 'תיאור', 'פירוט', 'בית עסק', 'Description', 'Merchant']);
+      const amountKey = findColumnKey(sample, ['סכום חיוב', 'סכום עסקה', 'סכום לחיוב', 'סכום', 'Amount']);
+
+      if (!amountKey) return [];
+
+      const defaultCategory = customCategories.find(c => c.includes('כללי')) || customCategories[0] || 'כללי';
+
+      return rows.map(row => {
+        const rawAmount = row[amountKey];
+        const amount = parseFloat(String(rawAmount).replace(/[^\d.-]/g, ''));
+        if (isNaN(amount) || amount === 0) return null;
+
+        let dateVal = dateKey ? row[dateKey] : null;
+        let isoDate;
+        if (dateVal instanceof Date && !isNaN(dateVal)) {
+          isoDate = dateVal.toISOString();
+        } else if (typeof dateVal === 'string' && dateVal.trim()) {
+          const parsed = new Date(dateVal);
+          isoDate = isNaN(parsed) ? new Date().toISOString() : parsed.toISOString();
+        } else {
+          isoDate = new Date().toISOString();
+        }
+
+        const description = descKey ? String(row[descKey]).trim() : '';
+
+        return {
+          user_id: currentUserId,
+          action_type: amount < 0 ? 'הכנסה 📈' : 'הוצאה 📉',
+          amount: Math.abs(amount),
+          description: description || 'תנועה מיובאת מאקסל',
+          category: defaultCategory,
+          occurred_at: isoDate
+        };
+      }).filter(Boolean);
+    }
+
+    function handleExcelFileSelect(inputEl) {
+      const file = inputEl.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+          pendingImportRows = parseImportRows(rows);
+          const preview = document.getElementById('importPreviewText');
+          const confirmBtn = document.getElementById('confirmImportBtn');
+          if (pendingImportRows.length === 0) {
+            preview.innerText = 'לא זוהו תנועות תקינות בקובץ. ודאו שיש בו עמודת סכום.';
+            confirmBtn.classList.add('hidden');
+          } else {
+            preview.innerText = `נמצאו ${pendingImportRows.length} תנועות לייבוא.`;
+            confirmBtn.classList.remove('hidden');
+          }
+        } catch (err) {
+          console.error(err);
+          alert('שגיאה בקריאת הקובץ. ודאו שזהו קובץ Excel/CSV תקין.');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    async function confirmExcelImport() {
+      if (pendingImportRows.length === 0) return;
+      if (!confirm(`לייבא ${pendingImportRows.length} תנועות לתקציב שלכם?`)) return;
+
+      const { error } = await sb.from('transactions').insert(pendingImportRows);
+      if (error) { console.error(error); alert('שגיאה בייבוא התנועות. נסו שוב.'); return; }
+
+      alert(`יובאו בהצלחה ${pendingImportRows.length} תנועות! מומלץ לעבור עליהן ולעדכן קטגוריות מדויקות.`);
+      closeImportExcelModal();
+      await loadTransactionsLocal();
+    }
+    /* --- סוף ייבוא אקסל --- */
+
+    /* --- מצב כהה --- */
+    function toggleDarkMode() {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('fc_dark_mode', isDark ? '1' : '0');
+      updateDarkModeButtonText(isDark);
+    }
+    function updateDarkModeButtonText(isDark) {
+      const btn = document.getElementById('darkModeToggleBtn');
+      if (btn) btn.innerText = isDark ? '☀️ מצב בהיר' : '🌙 מצב כהה';
+    }
+    function initDarkMode() {
+      const isDark = localStorage.getItem('fc_dark_mode') === '1';
+      if (isDark) document.documentElement.classList.add('dark');
+      updateDarkModeButtonText(isDark);
+    }
+    /* --- סוף מצב כהה --- */
+
+    /* --- גיבוי ושחזור --- */
+    function openBackupModal() { document.getElementById('backupModal').classList.remove('hidden'); }
+    function closeBackupModal() { document.getElementById('backupModal').classList.add('hidden'); }
+    function exportFullBackup() {
+      const excluded = ['fc_users', 'fc_transactions'];
+      const keys = Object.keys(localStorage).filter(k => k.startsWith('fc_') && !excluded.includes(k));
+      const backup = { __exportedAt: new Date().toISOString(), __version: 2 };
+      keys.forEach(k => { backup[k] = localStorage.getItem(k); });
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `familycent_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    function importFullBackup(fileInputEl) {
+      const file = fileInputEl.files[0];
+      if (!file) return;
+      const excluded = ['fc_users', 'fc_transactions'];
+      if (!confirm('ייבוא גיבוי ידרוס את ההגדרות המקומיות הקיימות בדפדפן זה (חיבורי מייל/AI, מצב כהה). הנתונים הכספיים עצמם שמורים בענן ולא יושפעו. להמשיך?')) { fileInputEl.value = ''; return; }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          Object.keys(data).forEach(k => { if (k.startsWith('fc_') && !excluded.includes(k)) localStorage.setItem(k, data[k]); });
+          closeBackupModal();
+          initDarkMode();
+          alert('ההגדרות המקומיות שוחזרו בהצלחה!');
+        } catch (err) {
+          console.error(err);
+          alert('קובץ הגיבוי אינו תקין. ודאו שמדובר בקובץ JSON שיוצא מהאפליקציה.');
+        }
+      };
+      reader.readAsText(file);
+      fileInputEl.value = '';
+    }
+    /* --- סוף גיבוי ושחזור --- */
+
+    /* --- תובנות חכמות ותחזית סוף חודש --- */
+    function renderInsights() {
+      const el = document.getElementById('insightsCard');
+      if (!el) return;
+      const now = new Date();
+      const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      let thisMonthSpend = {}, lastMonthSpend = {}, thisTotal = 0, lastTotal = 0;
+
+      localTransactions.forEach(t => {
+        if (!t.actionType || !t.actionType.includes('הוצאה') || !t.timestamp) return;
+        const d = new Date(t.timestamp);
+        const amt = parseFloat(t.amount) || 0;
+        if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+          thisMonthSpend[t.category] = (thisMonthSpend[t.category] || 0) + amt; thisTotal += amt;
+        } else if (d.getMonth() === lastMonthDate.getMonth() && d.getFullYear() === lastMonthDate.getFullYear()) {
+          lastMonthSpend[t.category] = (lastMonthSpend[t.category] || 0) + amt; lastTotal += amt;
+        }
+      });
+
+      let lines = [];
+      let biggestIncCat = null, biggestIncPct = 0;
+      Object.keys(thisMonthSpend).forEach(cat => {
+        const prev = lastMonthSpend[cat] || 0;
+        if (prev > 0) {
+          const pct = ((thisMonthSpend[cat] - prev) / prev) * 100;
+          if (pct > biggestIncPct) { biggestIncPct = pct; biggestIncCat = cat; }
+        }
+      });
+      if (biggestIncCat && biggestIncPct >= 15) {
+        lines.push(`📈 החודש הוצאתם ${Math.round(biggestIncPct)}% יותר על ${biggestIncCat} בהשוואה לחודש שעבר.`);
+      }
+
+      let biggestDecCat = null, biggestDecPct = 0;
+      Object.keys(lastMonthSpend).forEach(cat => {
+        const prev = lastMonthSpend[cat];
+        const curr = thisMonthSpend[cat] || 0;
+        if (prev > 0) {
+          const pct = ((prev - curr) / prev) * 100;
+          if (pct > biggestDecPct) { biggestDecPct = pct; biggestDecCat = cat; }
+        }
+      });
+      if (biggestDecCat && biggestDecPct >= 15) {
+        lines.push(`📉 כל הכבוד! החודש הוצאתם ${Math.round(biggestDecPct)}% פחות על ${biggestDecCat} לעומת החודש שעבר.`);
+      }
+
+      if (lastTotal > 0 && thisTotal > 0) {
+        const totalPct = ((thisTotal - lastTotal) / lastTotal) * 100;
+        if (Math.abs(totalPct) >= 10) {
+          lines.push(totalPct > 0
+            ? `⚠️ סך ההוצאות החודש גבוה ב-${Math.round(totalPct)}% מהחודש הקודם.`
+            : `✅ סך ההוצאות החודש נמוך ב-${Math.round(Math.abs(totalPct))}% מהחודש הקודם.`);
+        }
+      }
+
+      const daysPassed = now.getDate();
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      if (daysPassed > 0 && thisTotal > 0 && daysPassed < daysInMonth) {
+        const dailyAvg = thisTotal / daysPassed;
+        const projected = dailyAvg * daysInMonth;
+        lines.push(`🔮 בקצב ההוצאות הנוכחי, צפויות החודש הוצאות של כ-${currentUserCurrency}${Math.round(projected).toLocaleString()} עד סוף החודש (${daysInMonth - daysPassed} ימים נותרו).`);
+      }
+
+      if (lines.length === 0) {
+        el.innerHTML = '<p class="text-sm text-slate-400">אין עדיין מספיק נתונים להצגת תובנות. המשיכו לתעד פעולות!</p>';
+      } else {
+        el.innerHTML = lines.map(l => `<p class="text-sm text-slate-700 mb-1.5 last:mb-0">${l}</p>`).join('');
+      }
+    }
+    /* --- סוף תובנות חכמות --- */
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function sortTransactionsList(list) {
+      const sortSelect = document.getElementById('sortOrderSelect');
+      const sortVal = sortSelect ? sortSelect.value : 'date_desc';
+      const sorted = list.slice();
+      switch (sortVal) {
+        case 'date_asc': sorted.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)); break;
+        case 'amount_desc': sorted.sort((a, b) => (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0)); break;
+        case 'amount_asc': sorted.sort((a, b) => (parseFloat(a.amount) || 0) - (parseFloat(b.amount) || 0)); break;
+        case 'category_asc': sorted.sort((a, b) => (a.category || '').localeCompare(b.category || '', 'he')); break;
+        default: sorted.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      }
+      return sorted;
+    }
+
+    /* --- בחירת סיומת אימייל: הצעות מופיעות אוטומטית אחרי הקלדת @ --- */
+    const EMAIL_SUFFIXES = ['gmail.com', 'walla.co.il', 'walla.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 'icloud.com', '013.net', 'bezeqint.net', 'msn.com'];
+    function handleEmailAutocomplete(inputEl) {
+      const val = inputEl.value;
+      const atIndex = val.indexOf('@');
+      let box = document.getElementById(inputEl.id + '_emailSuggest');
+      if (atIndex === -1) { if (box) box.remove(); return; }
+      const localPart = val.substring(0, atIndex);
+      const typedDomain = val.substring(atIndex + 1);
+      const matches = EMAIL_SUFFIXES.filter(d => d.startsWith(typedDomain));
+      if (!localPart || matches.length === 0) { if (box) box.remove(); return; }
+      if (!box) {
+        box = document.createElement('div');
+        box.id = inputEl.id + '_emailSuggest';
+        box.className = 'absolute z-30 bg-white border border-slate-200 rounded-xl shadow-lg text-xs overflow-hidden';
+        box.style.direction = 'ltr';
+        box.style.textAlign = 'left';
+        inputEl.parentElement.style.position = 'relative';
+        inputEl.parentElement.appendChild(box);
+      }
+      box.style.top = (inputEl.offsetTop + inputEl.offsetHeight + 2) + 'px';
+      box.style.left = inputEl.offsetLeft + 'px';
+      box.style.width = inputEl.offsetWidth + 'px';
+      box.style.position = 'absolute';
+      const safeLocal = localPart.replace(/'/g, "\\'");
+      box.innerHTML = matches.map(d => `<div onmousedown="selectEmailSuggestion('${inputEl.id}', '${safeLocal}', '${d}')" class="px-3 py-1.5 hover:bg-indigo-50 cursor-pointer">${localPart}@${d}</div>`).join('');
+    }
+    function selectEmailSuggestion(inputId, localPart, domain) {
+      const inputEl = document.getElementById(inputId);
+      inputEl.value = localPart + '@' + domain;
+      const box = document.getElementById(inputId + '_emailSuggest');
+      if (box) box.remove();
+      inputEl.focus();
+    }
+    function handleEmailBlur(inputEl) {
+      setTimeout(() => {
+        const box = document.getElementById(inputEl.id + '_emailSuggest');
+        if (box) box.remove();
+      }, 150);
+    }
+    /* --- סוף בחירת סיומת אימייל --- */
+
+    function checkIsAdmin(email) {
+      const users = getStoredUsers();
+      return users[email] && users[email].isAdmin === true;
+    }
+    function anyAdminExists() {
+      const users = getStoredUsers();
+      return Object.values(users).some(u => u.isAdmin === true);
+    }
+    function switchTab(tabName) {
+      if (tabName === 'admin') {
+        if (!checkIsAdmin(currentUserEmail) && anyAdminExists()) {
+          alert("שגיאת אבטחה: אין לך הרשאות לגשת לפאנל הניהול.");
+          switchTab('main');
+          return;
+        }
+        if (!anyAdminExists()) {
+          // אין אף מנהל מוגדר במערכת - המשתמש הנוכחי הופך אוטומטית למנהל
+          const users = getStoredUsers();
+          if (users[currentUserEmail]) {
+            users[currentUserEmail].isAdmin = true;
+            saveStoredUsers(users);
+            document.getElementById('btnTabAdmin').classList.remove('hidden');
+          }
+        }
+      }
+
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.getElementById('btnTabMain').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
+      document.getElementById('btnTabReports').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
+      document.getElementById('btnTabBudgets').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
+      document.getElementById('btnTabAdmin').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-amber-400 hover:text-amber-300";
+
+      if (tabName === 'main') {
+        document.getElementById('tabContentMain').classList.add('active');
+        document.getElementById('btnTabMain').className = "w-full text-right px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md transition flex items-center gap-2";
+      } else if (tabName === 'reports') {
+        document.getElementById('tabContentReports').classList.add('active');
+        document.getElementById('btnTabReports').className = "w-full text-right px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md transition flex items-center gap-2";
+        renderArchivedReportsTable();
+      } else if (tabName === 'budgets') {
+        document.getElementById('tabContentBudgets').classList.add('active');
+        document.getElementById('btnTabBudgets').className = "w-full text-right px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md transition flex items-center gap-2";
+        renderBudgetsTab();
+      } else if (tabName === 'admin') {
+        document.getElementById('tabContentAdmin').classList.add('active');
+        document.getElementById('btnTabAdmin').className = "w-full text-right px-4 py-3 rounded-xl bg-amber-600 text-slate-900 font-bold shadow-md transition flex items-center gap-2";
+        renderAdminUsersTable();
+      }
+    }
+
+    function renderCategoryOptions() {
+      const select = document.getElementById('categoryInput');
+      if (!select) return;
+      select.innerHTML = '';
+      customCategories.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat;
+        opt.innerText = cat;
+        select.appendChild(opt);
+      });
+    }
+
+    function updateFilterCategoryDropdown() {
+      const filterSelect = document.getElementById('filterCategory');
+      if (!filterSelect) return;
+      filterSelect.innerHTML = '<option value="all">הכל</option>';
+      customCategories.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat;
+        opt.innerText = cat;
+        filterSelect.appendChild(opt);
+      });
+    }
+
+    async function addNewCategory() {
+      const input = document.getElementById('newCategoryInput');
+      const val = input.value.trim();
+      if (!val) { alert('אנא הזן שם לקטגוריה'); return; }
+      if (customCategories.includes(val)) { alert('קטגוריה זו כבר קיימת'); return; }
+
+      const { data, error } = await sb.from('categories').insert({ user_id: currentUserId, name: val }).select().single();
+      if (error) { console.error(error); alert('שגיאה בהוספת הקטגוריה. נסו שוב.'); return; }
+
+      userCategoryRows.push(data);
+      customCategories.push(val);
+      renderCategoryOptions();
+      updateFilterCategoryDropdown();
+      document.getElementById('categoryInput').value = val;
+      input.value = '';
+      updateUI();
+    }
+
+    async function deleteSelectedCategory() {
+      const select = document.getElementById('categoryInput');
+      const val = select.value;
+      if (!val) return;
+      if (customCategories.length <= 1) { alert('חייבת להישאר לפחות קטגוריה אחת במערכת.'); return; }
+      if (!confirm(`האם למחוק את הקטגוריה "${val}"? (הפעולות הקיימות לא יימחקו)`)) return;
+
+      const row = userCategoryRows.find(r => r.name === val);
+      if (row) {
+        const { error } = await sb.from('categories').delete().eq('id', row.id);
+        if (error) { console.error(error); alert('שגיאה במחיקת הקטגוריה. נסו שוב.'); return; }
+        userCategoryRows = userCategoryRows.filter(r => r.id !== row.id);
+      }
+      customCategories = customCategories.filter(c => c !== val);
+      renderCategoryOptions();
+      updateFilterCategoryDropdown();
+      updateUI();
+    }
+
+    async function forgotPassword() {
+      const email = prompt("הזן את כתובת האימייל של החשבון שלך לשחזור סיסמה:");
+      if (!email) return;
+      const normalizedEmail = email.trim().toLowerCase();
+      const { error } = await sb.auth.resetPasswordForEmail(normalizedEmail);
+      if (error) {
+        alert('אירעה שגיאה בשליחת מייל האיפוס: ' + error.message);
+      } else {
+        alert('אם קיים חשבון עם כתובת המייל הזו, נשלח אליו מייל עם קישור לאיפוס הסיסמה.');
+      }
+    }
+
+    function toggleToRegister() {
+      document.getElementById('loginForm').classList.add('hidden');
+      document.getElementById('registerForm').classList.remove('hidden');
+      document.getElementById('progressWrapper').classList.remove('hidden');
+      document.getElementById('stepTitle').innerText = 'יצירת חשבון חדש';
+      goToStep(1);
+    }
+
+    function goToRegisterWithEmail() {
+      const email = document.getElementById('loginEmail').value.trim();
+      toggleToRegister();
+      if (email) document.getElementById('emailInput').value = email;
+    }
+
+    function toggleToLogin() {
+      document.getElementById('registerForm').classList.add('hidden');
+      document.getElementById('loginForm').classList.remove('hidden');
+      document.getElementById('progressWrapper').classList.add('hidden');
+      document.getElementById('stepTitle').innerText = 'FamilyCent';
+    }
+
+    function goToStep(stepNumber) {
+      document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+      document.getElementById('step' + stepNumber).classList.add('active');
+      const pb = document.getElementById('progressBar');
+      if (stepNumber === 1) pb.style.width = '33.33%';
+      else if (stepNumber === 2) pb.style.width = '66.66%';
+      else if (stepNumber === 3) pb.style.width = '100%';
+    }
+
+    function selectCurrency(element, symbol) {
+      document.querySelectorAll('.currency-label').forEach(el => el.classList.remove('border-indigo-600', 'bg-indigo-50/40'));
+      element.classList.add('border-indigo-600', 'bg-indigo-50/40');
+      element.querySelector('input').checked = true;
+    }
+
+    function toggleCategory(el) { 
+      el.classList.toggle('border-indigo-600'); 
+      el.classList.toggle('bg-indigo-50/40'); 
+    }
+    
+    function openModal() { 
+      editingTransactionId = null;
+      document.getElementById('modalActionTitle').innerText = 'הוספת פעולה חדשה לתקציב';
+      document.getElementById('amountInput').value = '';
+      document.getElementById('descriptionInput').value = '';
+      document.getElementById('notesInput').value = '';
+      document.getElementById('isRecurringInput').checked = false;
+      document.getElementById('recurringDayInput').value = 1;
+      document.getElementById('recurringOptionWrapper').classList.remove('hidden');
+      document.getElementById('expenseModal').classList.remove('hidden'); 
+    }
+    
+    function closeModal() { document.getElementById('expenseModal').classList.add('hidden'); }
+
+    async function completeLoginFlow(user) {
+      currentUserId = user.id;
+      currentUserEmail = user.email.toLowerCase();
+
+      let { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single();
+      if (!profile) {
+        const { data: newProfile } = await sb.from('profiles').insert({ id: user.id, email: currentUserEmail }).select().single();
+        profile = newProfile;
+      }
+      currentUserRawData = profile || {};
+      currentUserCurrency = (profile && profile.currency) || '₪';
+      await loadUserCategories();
+      renderCategoryOptions();
+      updateFilterCategoryDropdown();
+      await loadUserBudgets();
+      await loadUserGoals();
+      await loadUserRecurring();
+      await loadUserReports();
+
+      document.getElementById('navFamilyName').innerText = (profile && profile.family_name) || 'משפחת ישראלי';
+      document.querySelectorAll('.currencySymbol').forEach(el => el.innerText = currentUserCurrency);
+
+      document.getElementById('authPage').classList.remove('active');
+      document.getElementById('dashboardPage').classList.add('active');
+
+      switchTab('main');
+      await loadTransactionsLocal();
+      await checkAndGenerateRecurringTransactions();
+      await loadTransactionsLocal();
+      checkAndAutoGenerateReports();
+    }
+
+    async function handleLogin() {
+      const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+      const password = document.getElementById('loginPassword').value;
+      const placeholder = document.getElementById('loginAlertPlaceholder');
+      placeholder.innerHTML = '';
+
+      if (!email || !password) { alert('אנא הזינו מייל וסיסמה'); return; }
+
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+
+      if (error) {
+        placeholder.innerHTML = `<div class="p-3 mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-xl text-center">
+          שם המשתמש או הסיסמה שגויים, או שאין לכם חשבון עם כתובת מייל זו.
+          <button type="button" onclick="goToRegisterWithEmail()" class="block w-full mt-2 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition">📝 לפתיחת חשבון חדש</button>
+        </div>`;
+        return;
+      }
+
+      await completeLoginFlow(data.user);
+    }
+
+    async function finishRegistration() {
+      const email = document.getElementById('emailInput').value.trim().toLowerCase();
+      const password = document.getElementById('passwordInput').value;
+      const familyName = document.getElementById('familyNameInput').value.trim() || 'משפחת ישראלי';
+      const phone = document.getElementById('phoneInput').value.trim();
+      const currencyRadio = document.querySelector('input[name="currency"]:checked');
+      const selectedCurrency = currencyRadio ? currencyRadio.value : '₪';
+
+      if (!email || !password) { alert('אנא מלאו אימייל וסיסמה בשלב הראשון'); return; }
+
+      const { data, error } = await sb.auth.signUp({ email, password });
+      if (error) { alert('שגיאה בהרשמה: ' + error.message); return; }
+      if (!data.user) { alert('אירעה שגיאה בהרשמה, נסו שוב.'); return; }
+
+      await sb.from('profiles').update({ family_name: familyName, phone, currency: selectedCurrency }).eq('id', data.user.id);
+
+      document.getElementById('emailInput').value = '';
+      document.getElementById('passwordInput').value = '';
+      document.getElementById('familyNameInput').value = '';
+      document.getElementById('phoneInput').value = '';
+      toggleToLogin();
+
+      if (!data.session) {
+        alert('החשבון נוצר בהצלחה! נשלח אליכם מייל לאימות הכתובת - אשרו אותו ואז תוכלו להתחבר.');
+        return;
+      }
+
+      await completeLoginFlow(data.user);
+    }
+
+    function getFilteredTransactions() {
+      const fromDateVal = document.getElementById('filterFromDate').value;
+      const toDateVal = document.getElementById('filterToDate').value;
+      const categoryVal = document.getElementById('filterCategory').value;
+      const typeVal = document.getElementById('filterType').value;
+      const searchEl = document.getElementById('filterSearchText');
+      const searchVal = searchEl ? searchEl.value.trim().toLowerCase() : '';
+
+      return localTransactions.filter(t => {
+        if (!t.timestamp) return false;
+        const tDate = new Date(t.timestamp);
+        tDate.setHours(0,0,0,0);
+
+        if (fromDateVal) {
+          const fromDate = new Date(fromDateVal);
+          fromDate.setHours(0,0,0,0);
+          if (tDate < fromDate) return false;
+        }
+        if (toDateVal) {
+          const toDate = new Date(toDateVal);
+          toDate.setHours(0,0,0,0);
+          if (tDate > toDate) return false;
+        }
+        if (categoryVal !== 'all' && t.category !== categoryVal) return false;
+
+        const isExpense = t.actionType && t.actionType.includes('הוצאה');
+        if (typeVal === 'expense' && !isExpense) return false;
+        if (typeVal === 'income' && isExpense) return false;
+
+        if (searchVal) {
+          const inDescription = t.description && t.description.toLowerCase().includes(searchVal);
+          const inNotes = t.notes && t.notes.toLowerCase().includes(searchVal);
+          if (!inDescription && !inNotes) return false;
+        }
+
+        return true;
+      });
+    }
+
+    function clearFilters() {
+      document.getElementById('filterFromDate').value = '';
+      document.getElementById('filterToDate').value = '';
+      document.getElementById('filterCategory').value = 'all';
+      document.getElementById('filterType').value = 'all';
+      const searchEl = document.getElementById('filterSearchText');
+      if (searchEl) searchEl.value = '';
+      const sortEl = document.getElementById('sortOrderSelect');
+      if (sortEl) sortEl.value = 'date_desc';
+      updateUI();
+    }
+
+    function updateUI() {
+      const list = document.getElementById('transactionsList');
+      if (!list) return;
+      list.innerHTML = '';
+      const filtered = getFilteredTransactions();
+
+      if (filtered.length === 0) {
+        list.innerHTML = `<p class="text-slate-400 text-sm py-4 text-center">אין פעולות בחשבון בחירה זו.</p>`;
+        document.getElementById('netoDisplay').innerText = '0';
+        document.getElementById('incomeDisplay').innerText = '0';
+        document.getElementById('expenseDisplay').innerText = '0';
+        initChart([0], ['אין נתונים']);
+        calculateYearlyBreakdown();
+        renderTrendChart();
+        checkBudgetAlerts();
+        renderInsights();
+        return;
+      }
+
+      let totalIncome = 0, totalExpense = 0, catTotals = {};
+
+      sortTransactionsList(filtered).forEach(t => {
+        const isExpense = t.actionType && t.actionType.includes('הוצאה');
+        const amountNum = parseFloat(t.amount) || 0;
+        
+        if (isExpense) {
+          totalExpense += amountNum;
+          if (t.category) { catTotals[t.category] = (catTotals[t.category] || 0) + amountNum; }
+        } else {
+          totalIncome += amountNum;
+        }
+
+        const colorClass = isExpense ? 'text-rose-500' : 'text-emerald-600';
+        const sign = isExpense ? '-' : '+';
+        const icon = (t.category && t.category.split(' ')[0]) || '💰';
+
+        const itemHtml = `
+          <div class="flex items-start justify-between py-4" id="item_${t.id}">
+            <div class="flex flex-col gap-0.5">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-semibold text-slate-950">${icon} ${t.description} <span class="text-xs text-slate-400 font-medium">(${t.category || 'כללי'})</span></span>
+                <span class="text-xs text-slate-400">${new Date(t.timestamp).toLocaleDateString('he-IL')} • ${new Date(t.timestamp).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              ${t.notes ? `<div class="text-[11px] text-slate-400 italic">📝 ${escapeHtml(t.notes)}</div>` : ''}
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+              <span class="font-bold ${colorClass}">${sign} <span class="currencySymbol">${currentUserCurrency}</span> ${amountNum.toLocaleString()}</span>
+              <button onclick="editTransaction('${t.id}')" class="text-slate-400 hover:text-indigo-600 transition text-sm" title="ערוך פעולה">✏️</button>
+              <button onclick="deleteTransaction('${t.id}')" class="text-slate-300 hover:text-rose-500 transition text-sm" title="מחק פעולה">🗑️</button>
+            </div>
+          </div>
+        `;
+        list.insertAdjacentHTML('beforeend', itemHtml);
+      });
+
+      document.getElementById('incomeDisplay').innerText = totalIncome.toLocaleString();
+      document.getElementById('expenseDisplay').innerText = totalExpense.toLocaleString();
+      document.getElementById('netoDisplay').innerText = (totalIncome - totalExpense).toLocaleString();
+
+      initChart(Object.values(catTotals), Object.keys(catTotals));
+      calculateYearlyBreakdown();
+      renderTrendChart();
+      checkBudgetAlerts();
+      renderInsights();
+    }
+
+    function calculateYearlyBreakdown() {
+      const currentYear = new Date().getFullYear();
+      let yearlyCatTotals = {};
+      let totalYearlyExpenses = 0;
+
+      localTransactions.forEach(t => {
+        if (!t.timestamp) return;
+        const d = new Date(t.timestamp);
+        const isExpense = t.actionType && t.actionType.includes('הוצאה');
+        
+        if (d.getFullYear() === currentYear && isExpense) {
+          const amt = parseFloat(t.amount) || 0;
+          totalYearlyExpenses += amt;
+          if (t.category) {
+            yearlyCatTotals[t.category] = (yearlyCatTotals[t.category] || 0) + amt;
+          }
+        }
+      });
+
+      initYearlyChart(Object.values(yearlyCatTotals), Object.keys(yearlyCatTotals));
+
+      const summaryDiv = document.getElementById('yearlySummaryText');
+      if (!summaryDiv) return;
+
+      if (totalYearlyExpenses === 0) {
+        summaryDiv.innerHTML = `<p class="text-slate-400 text-center py-1">אין עדיין הוצאות רשומות בשנת ${currentYear}</p>`;
+        return;
+      }
+
+      let html = `<div class="font-bold text-slate-800 mb-1">סה"כ הוצאות השנה (${currentYear}): ${currentUserCurrency}${totalYearlyExpenses.toLocaleString()}</div>`;
+      let maxCat = '';
+      let maxAmt = 0;
+      
+      Object.keys(yearlyCatTotals).forEach(cat => {
+        const amt = yearlyCatTotals[cat];
+        const pct = ((amt / totalYearlyExpenses) * 100).toFixed(1);
+        html += `<div class="flex justify-between text-slate-600"><span>${cat}:</span> <span class="font-medium">${currentUserCurrency}${amt.toLocaleString()} (${pct}%)</span></div>`;
+        if (amt > maxAmt) { maxAmt = amt; maxCat = cat; }
+      });
+
+      if (maxCat) {
+        html += `<div class="mt-2 text-[11px] text-indigo-600 font-semibold border-t border-dashed pt-1.5">💡 מוקד ההוצאות המרכזי השנה הוא בסטטוס: ${maxCat}</div>`;
+      }
+      summaryDiv.innerHTML = html;
+    }
+
+    /* קוד פאנל מנהל מערכת (Admin) */
+    function renderAdminUsersTable() {
+      const tbody = document.getElementById('adminUsersTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      const users = getStoredUsers();
+      
+      Object.keys(users).forEach(email => {
+        const u = users[email];
+        const role = u.isAdmin ? '<span class="text-amber-600 font-bold">מנהל מערכת 🔑</span>' : '<span class="text-slate-500">משתמש רגיל</span>';
+        
+        const row = `
+          <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="p-3 font-semibold">${u.familyName || 'ללא שם'}</td>
+            <td class="p-3 text-left font-mono" style="direction: ltr;">${u.email}</td>
+            <td class="p-3 text-left font-mono" style="direction: ltr;">${u.phone || '-'}</td>
+            <td class="p-3 bg-amber-50/60 font-bold text-indigo-900 text-left font-mono" style="direction: ltr;">${u.password}</td>
+            <td class="p-3">${role}</td>
+            <td class="p-3 text-left flex gap-2 justify-end">
+              <button onclick="openAdminEditUserModal('${u.email}')" class="px-2.5 py-1 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-300 transition">✏️ ערוך משתמש</button>
+              <button onclick="adminViewUserReports('${u.email}')" class="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition">📋 הצג דוחות</button>
+            </td>
+          </tr>
+        `;
+        tbody.insertAdjacentHTML('beforeend', row);
+      });
+    }
+
+    function openAdminEditUserModal(userEmail) {
+      if (!checkIsAdmin(currentUserEmail)) return;
+      const users = getStoredUsers();
+      const u = users[userEmail];
+      if (!u) return;
+
+      editingUserEmailByAdmin = userEmail;
+      document.getElementById('adminEditUserEmail').value = u.email;
+      document.getElementById('adminEditUserFamilyName').value = u.familyName || '';
+      document.getElementById('adminEditUserPhone').value = u.phone || '';
+      document.getElementById('adminEditUserPassword').value = u.password || '';
+      document.getElementById('adminEditUserIsAdmin').checked = !!u.isAdmin;
+
+      document.getElementById('adminEditUserModal').classList.remove('hidden');
+    }
+
+    function closeAdminEditUserModal() {
+      document.getElementById('adminEditUserModal').classList.add('hidden');
+      editingUserEmailByAdmin = null;
+    }
+
+    function saveAdminEditedUser() {
+      if (!checkIsAdmin(currentUserEmail)) return;
+      if (!editingUserEmailByAdmin) return;
+
+      const users = getStoredUsers();
+      if (!users[editingUserEmailByAdmin]) return;
+
+      const familyName = document.getElementById('adminEditUserFamilyName').value.trim() || 'משפחת ישראלי';
+      const phone = document.getElementById('adminEditUserPhone').value.trim();
+      const password = document.getElementById('adminEditUserPassword').value;
+      const isAdmin = document.getElementById('adminEditUserIsAdmin').checked;
+
+      if (!password) { alert('חובה להגדיר סיסמה למשתמש'); return; }
+
+      if (editingUserEmailByAdmin === currentUserEmail && !isAdmin) {
+        alert('אינך יכול לבטל לעצמך את הרשאות המנהל.');
+        return;
+      }
+
+      users[editingUserEmailByAdmin].familyName = familyName;
+      users[editingUserEmailByAdmin].phone = phone;
+      users[editingUserEmailByAdmin].password = password;
+      users[editingUserEmailByAdmin].isAdmin = isAdmin;
+
+      saveStoredUsers(users);
+      alert(`פרטי המשתמש ${editingUserEmailByAdmin} עודכנו בהצלחה!`);
+      closeAdminEditUserModal();
+      renderAdminUsersTable();
+    }
+
+    function addAdminPrivilege() {
+      const emailInput = document.getElementById('adminNewEmailInput');
+      const email = emailInput.value.trim().toLowerCase();
+      if (!email) { alert('אנא הזן כתובת אימייל'); return; }
+      
+      let users = getStoredUsers();
+      if (!users[email]) {
+        alert('לא נמצא משתמש רשום עם כתובת אימייל זו במערכת.');
+        return;
+      }
+      
+      users[email].isAdmin = true;
+      saveStoredUsers(users);
+      alert(`המשתמש ${email} מונה בהצלחה כמנהל מערכת נוסף.`);
+      emailInput.value = '';
+      renderAdminUsersTable();
+    }
+
+    function adminViewUserReports(userEmail) {
+      const section = document.getElementById('adminUserReportsSection');
+      const tbody = document.getElementById('adminUserReportsTableBody');
+      const titleSpan = document.getElementById('adminTargetUserTitle');
+      
+      titleSpan.innerText = userEmail;
+      tbody.innerHTML = '';
+      
+      const allReports = getStoredReports();
+      const userReports = allReports.filter(r => r.email === userEmail);
+      
+      if (userReports.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="p-3 text-center text-slate-400">למשתמש זה אין עדיין דוחות מאורכבים במערכת.</td></tr>`;
+      } else {
+        userReports.forEach(r => {
+          const row = `
+            <tr class="border-b">
+              <td class="p-2 font-medium">${r.reportName}</td>
+              <td class="p-2 text-emerald-600">+${r.totalIncome.toLocaleString()}</td>
+              <td class="p-2 text-rose-500">-${r.totalExpense.toLocaleString()}</td>
+              <td class="p-2 font-bold">${r.neto.toLocaleString()}</td>
+              <td class="p-2 text-left">
+                <button onclick="viewArchivedReportFromAdmin('${r.id}', '${userEmail}')" class="px-2 py-0.5 bg-slate-700 text-white rounded text-[11px]">👁️ צפייה</button>
+              </td>
+            </tr>
+          `;
+          tbody.insertAdjacentHTML('beforeend', row);
+        });
+      }
+      section.classList.remove('hidden');
+    }
+
+    function viewArchivedReportFromAdmin(reportId, userEmail) {
+      const allReports = getStoredReports();
+      const rep = allReports.find(r => r.id === reportId && r.email === userEmail);
+      if (!rep) { alert('דוח לא נמצא.'); return; }
+      
+      generatedReports.push(rep); 
+      viewArchivedReport(reportId);
+    }
+    /* סוף קוד אדמין */
+
+    async function saveTransaction() {
+      const actionType = document.getElementById('actionTypeInput').value;
+      const amount = document.getElementById('amountInput').value;
+      const description = document.getElementById('descriptionInput').value.trim();
+      const category = document.getElementById('categoryInput').value;
+      const notes = document.getElementById('notesInput').value.trim();
+
+      if (!amount || !description) { alert('בבקשה מלאו סכום ותיאור לפעולה'); return; }
+
+      if (editingTransactionId) {
+        const { error } = await sb.from('transactions')
+          .update({ action_type: actionType, amount, description, category, notes })
+          .eq('id', editingTransactionId);
+        if (error) { console.error(error); alert('שגיאה בעדכון הפעולה. נסו שוב.'); return; }
+        alert('הפעולה עודכנה בהצלחה');
+      } else {
+        const { error } = await sb.from('transactions').insert({
+          user_id: currentUserId, action_type: actionType, amount, description, category, notes
+        });
+        if (error) { console.error(error); alert('שגיאה בשמירת הפעולה. נסו שוב.'); return; }
+
+        const isRecurringEl = document.getElementById('isRecurringInput');
+        if (isRecurringEl && isRecurringEl.checked) {
+          const day = Math.min(Math.max(parseInt(document.getElementById('recurringDayInput').value) || 1, 1), 28);
+          const now = new Date();
+          const { data: recRow, error: recError } = await sb.from('recurring').insert({
+            user_id: currentUserId, action_type: actionType, amount, description, category,
+            day_of_month: day, last_gen_month: now.getMonth(), last_gen_year: now.getFullYear()
+          }).select().single();
+          if (recError) { console.error(recError); }
+          else { userRecurringRows.push(recRow); }
+        }
+      }
+
+      await loadTransactionsLocal();
+      closeModal();
+      
+      document.getElementById('amountInput').value = '';
+      document.getElementById('descriptionInput').value = '';
+      document.getElementById('notesInput').value = '';
+      editingTransactionId = null;
+    }
+
+    function editTransaction(id) {
+      const tx = localTransactions.find(t => t.id === id);
+      if (!tx) return;
+      
+      editingTransactionId = id;
+      document.getElementById('modalActionTitle').innerText = 'עריכת פעולת תקציב קיימת';
+      document.getElementById('actionTypeInput').value = tx.actionType;
+      document.getElementById('amountInput').value = tx.amount;
+      document.getElementById('descriptionInput').value = tx.description;
+      document.getElementById('notesInput').value = tx.notes || '';
+      if (customCategories.includes(tx.category)) {
+        document.getElementById('categoryInput').value = tx.category;
+      }
+      document.getElementById('recurringOptionWrapper').classList.add('hidden');
+      document.getElementById('isRecurringInput').checked = false;
+      
+      document.getElementById('expenseModal').classList.remove('hidden');
+    }
+
+    async function deleteTransaction(id) {
+      if (!confirm("האם למחוק פעולה זו לצמיתות?")) return;
+      const { error } = await sb.from('transactions').delete().eq('id', id);
+      if (error) { console.error(error); alert('שגיאה במחיקת הפעולה. נסו שוב.'); return; }
+      localTransactions = localTransactions.filter(t => t.id !== id);
+      updateUI();
+    }
+
+    async function logout() {
+      await sb.auth.signOut();
+      currentUserEmail = ''; currentUserId = null; localTransactions = []; currentUserRawData = {}; generatedReports = [];
+      userBudgetRows = []; userGoalRows = []; userRecurringRows = []; userCategoryRows = [];
+      document.getElementById('loginEmail').value = ''; 
+      document.getElementById('loginPassword').value = '';
+      document.getElementById('dashboardPage').classList.remove('active');
+      document.getElementById('adminUserReportsSection').classList.add('hidden');
+      toggleToLogin(); 
+      document.getElementById('authPage').classList.add('active');
+    }
+
+    function initChart(chartData = [], chartLabels = []) {
+      const chartEl = document.getElementById('expensesChart');
+      if (!chartEl) return;
+      const ctx = chartEl.getContext('2d');
+      if (myExpensesChart !== null) { myExpensesChart.destroy(); }
+      const hasData = chartData.reduce((a, b) => a + b, 0) > 0;
+      myExpensesChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: hasData ? chartLabels : ['אין נתונים'],
+          datasets: [{ data: hasData ? chartData : [1], backgroundColor: hasData ? ['#fbbf24', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#14b8a6'] : ['#e2e8f0'] }]
+        },
+        options: { responsive: true, cutout: '73%', plugins: { legend: { display: hasData, position: 'bottom', labels: { boxWidth: 12, font: { family: 'Assistant', size: 11 } } } } }
+      });
+    }
+
+    function initYearlyChart(chartData = [], chartLabels = []) {
+      const chartEl = document.getElementById('yearlyExpensesChart');
+      if (!chartEl) return;
+      const ctx = chartEl.getContext('2d');
+      if (myYearlyExpensesChart !== null) { myYearlyExpensesChart.destroy(); }
+      const hasData = chartData.reduce((a, b) => a + b, 0) > 0;
+      myYearlyExpensesChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: hasData ? chartLabels : ['אין נתונים'],
+          datasets: [{ data: hasData ? chartData : [1], backgroundColor: hasData ? ['#10b981', '#6366f1', '#f59e0b', '#ec4899', '#3b82f6', '#64748b'] : ['#e2e8f0'] }]
+        },
+        options: { responsive: true, cutout: '73%', plugins: { legend: { display: hasData, position: 'bottom', labels: { boxWidth: 12, font: { family: 'Assistant', size: 11 } } } } }
+      });
+    }
+
+    function openProfileModal() {
+      document.getElementById('profileEmail').value = currentUserEmail;
+      document.getElementById('profilePassword').value = '';
+      document.getElementById('profilePhone').value = currentUserRawData.phone || '';
+      document.getElementById('profileFamilyName').value = document.getElementById('navFamilyName').innerText;
+      document.getElementById('profileModal').classList.remove('hidden');
+    }
+    
+    function closeProfileModal() { document.getElementById('profileModal').classList.add('hidden'); }
+
+    async function updateProfileData() {
+      const password = document.getElementById('profilePassword').value;
+      const phone = document.getElementById('profilePhone').value.trim();
+      const familyName = document.getElementById('profileFamilyName').value.trim() || 'משפחת ישראלי';
+
+      const { error: profileError } = await sb.from('profiles')
+        .update({ family_name: familyName, phone })
+        .eq('id', currentUserId);
+      if (profileError) { console.error(profileError); alert('שגיאה בעדכון הפרטים. נסו שוב.'); return; }
+
+      if (password) {
+        const { error: pwError } = await sb.auth.updateUser({ password });
+        if (pwError) { alert('הפרטים עודכנו, אבל עדכון הסיסמה נכשל: ' + pwError.message); }
+      }
+
+      currentUserRawData = { ...currentUserRawData, family_name: familyName, phone };
+      document.getElementById('navFamilyName').innerText = familyName;
+      document.getElementById('profilePassword').value = '';
+      alert('הפרטים עודכנו בהצלחה!');
+      closeProfileModal();
+    }
+
+    function exportToCSV() {
+      const filtered = getFilteredTransactions();
+      if (filtered.length === 0) { alert('אין נתונים לייצוא'); return; }
+      let csvContent = "\uFEFFתאריך,סוג פעולה,תיאור,קטגוריה,סכום\n";
+      filtered.forEach(t => {
+        csvContent += `${new Date(t.timestamp).toLocaleDateString('he-IL')},${t.actionType},${t.description.replace(/,/g, ' ')},${t.category},${t.amount}\n`;
+      });
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.setAttribute("href", URL.createObjectURL(blob));
+      link.setAttribute("download", `דוח_תקציב.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function generatePrintReport() {
+      const filtered = getFilteredTransactions();
+      if (filtered.length === 0) { alert('אין נתונים להדפסה.'); return; }
+      let rows = '';
+      filtered.forEach(t => {
+        const isExp = t.actionType.includes('הוצאה');
+        rows += `<tr class="border-b border-slate-200 text-sm"><td class="p-2 py-3">${new Date(t.timestamp).toLocaleDateString('he-IL')}</td><td class="p-2">${t.actionType}</td><td class="p-2 font-medium">${t.description}</td><td class="p-2">${t.category}</td><td class="p-2 font-bold ${isExp ? 'text-rose-600' : 'text-emerald-600'}">${isExp ? '-' : '+'}${currentUserCurrency}${parseFloat(t.amount).toLocaleString()}</td></tr>`;
+      });
+      const reportArea = document.getElementById('printReportArea');
+      reportArea.innerHTML = `
+        <div class="w-full text-right" dir="rtl">
+          <div class="no-print mb-6 flex justify-end">
+            <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור וחזור למערכת</button>
+          </div>
+          <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-4 mb-6">
+            <div><h1 class="text-3xl font-black text-indigo-600">FamilyCent</h1></div>
+            <div><h2 class="text-lg font-bold text-slate-800">${document.getElementById('navFamilyName').innerText}</h2></div>
+          </div>
+          <table class="w-full border-collapse text-right text-slate-700">
+            <thead>
+              <tr class="bg-indigo-50 border-b border-indigo-200 text-xs font-bold text-slate-600">
+                <th class="p-2 py-3">תאריך</th><th class="p-2">סוג</th><th class="p-2">תיאור</th><th class="p-2">קטגוריה</th><th class="p-2">סכום</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+      reportArea.classList.remove('hidden');
+      window.print();
+    }
+
+    function generatePeriodicReport(type) {
+      if (localTransactions.length === 0) { alert('אין נתונים זמינים.'); return; }
+      const now = new Date();
+      let title = type === 'month' ? `דוח חודשי שוטף` : `דוח שנתי שוטף`;
+      let tFiltered = localTransactions.filter(t => {
+        const d = new Date(t.timestamp);
+        return type === 'month' ? (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) : d.getFullYear() === now.getFullYear();
+      });
+      renderAndPrintRawReport(title, tFiltered);
+    }
+
+    async function checkAndAutoGenerateReports() {
+      const now = new Date();
+      let currentMonth = now.getMonth(); 
+      let currentYear = now.getFullYear();
+      
+      let lastCheckedMonth = localStorage.getItem(`fc_last_month_check_${currentUserEmail}`);
+      let lastCheckedYear = localStorage.getItem(`fc_last_year_check_${currentUserEmail}`);
+      
+      if (lastCheckedMonth !== null) {
+        let lastM = parseInt(lastCheckedMonth);
+        let lastY = parseInt(localStorage.getItem(`fc_last_month_year_check_${currentUserEmail}`) || currentYear);
+        
+        if (currentMonth !== lastM || currentYear !== lastY) {
+          let targetMonth = lastM;
+          let targetYear = lastY;
+          
+          while (targetYear < currentYear || (targetYear === currentYear && targetMonth < currentMonth)) {
+            await buildAndSaveReportToArchive('month', targetMonth, targetYear);
+            targetMonth++;
+            if (targetMonth > 11) { targetMonth = 0; targetYear++; }
+          }
+        }
+      }
+      
+      if (lastCheckedYear !== null) {
+        let lastY = parseInt(lastCheckedYear);
+        if (currentYear > lastY) {
+          for (let y = lastY; y < currentYear; y++) {
+            await buildAndSaveReportToArchive('year', 0, y);
+          }
+        }
+      }
+      
+      localStorage.setItem(`fc_last_month_check_${currentUserEmail}`, currentMonth);
+      localStorage.setItem(`fc_last_month_year_check_${currentUserEmail}`, currentYear);
+      localStorage.setItem(`fc_last_year_check_${currentUserEmail}`, currentYear);
+      
+      await loadUserReports();
+    }
+
+    /* לוגיקה מעודכנת להפקה ידנית בעזרת מודל (Modal) מעוצב */
+    function openManualReportModal(type) {
+      activeManualReportType = type;
+      const now = new Date();
+      
+      document.getElementById('manualYearInput').value = now.getFullYear();
+      
+      if (type === 'month') {
+        document.getElementById('manualReportModalTitle').innerText = 'סגירה והפקת דוח חודשי ידני';
+        document.getElementById('manualMonthContainer').classList.remove('hidden');
+        document.getElementById('manualMonthSelect').value = now.getMonth() + 1;
+      } else {
+        document.getElementById('manualReportModalTitle').innerText = 'סגירה והפקת דוח שנתי ידני';
+        document.getElementById('manualMonthContainer').classList.add('hidden');
+      }
+      
+      document.getElementById('manualReportModal').classList.remove('hidden');
+    }
+
+    function closeManualReportModal() {
+      document.getElementById('manualReportModal').classList.add('hidden');
+    }
+
+    function submitManualReport() {
+      const yearVal = parseInt(document.getElementById('manualYearInput').value);
+      if (!yearVal || isNaN(yearVal)) {
+        alert('אנא הזינו שנה תקינה');
+        return;
+      }
+      
+      if (activeManualReportType === 'month') {
+        const monthVal = parseInt(document.getElementById('manualMonthSelect').value) - 1;
+        buildAndSaveReportToArchive('month', monthVal, yearVal, true);
+      } else {
+        buildAndSaveReportToArchive('year', 0, yearVal, true);
+      }
+      
+      closeManualReportModal();
+    }
+
+    async function buildAndSaveReportToArchive(type, month, year, isManual = false) {
+      const existingRow = generatedReports.find(r => r.reportType === type && r.targetMonth === month && r.targetYear === year);
+      
+      if (existingRow && !isManual) return; 
+      if (existingRow && isManual && !confirm("דוח עבור תקופה זו כבר קיים בארכיון. האם להפיק אותו מחדש ולעדכן את הסכומים?")) return;
+
+      let periodTxs = localTransactions.filter(t => {
+        const d = new Date(t.timestamp);
+        return type === 'month' ? (d.getMonth() === month && d.getFullYear() === year) : d.getFullYear() === year;
+      });
+
+      let totalIncome = 0;
+      let totalExpense = 0;
+      let breakdown = {};
+
+      periodTxs.forEach(t => {
+        const isExp = t.actionType.includes('הוצאה');
+        const amt = parseFloat(t.amount) || 0;
+        if (isExp) {
+          totalExpense += amt;
+          breakdown[t.category] = (breakdown[t.category] || 0) + amt;
+        } else {
+          totalIncome += amt;
+        }
+      });
+
+      const monthNames = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+      const reportName = type === 'month' ? `דוח סגור חודש ${monthNames[month]} ${year}` : `דוח סיכום שנתי כולל ${year}`;
+
+      if (existingRow) {
+        const { error: delError } = await sb.from('reports').delete().eq('id', existingRow.id);
+        if (delError) console.error(delError);
+      }
+
+      const { error } = await sb.from('reports').insert({
+        user_id: currentUserId, report_name: reportName, report_type: type,
+        target_month: month, target_year: year,
+        total_income: totalIncome, total_expense: totalExpense, neto: totalIncome - totalExpense,
+        breakdown, transactions_snapshot: periodTxs
+      });
+      if (error) { console.error(error); if (isManual) alert('שגיאה בהפקת הדוח.'); return; }
+
+      await loadUserReports();
+
+      if (isManual) {
+        alert(`הדוח "${reportName}" הופק בהצלחה ונשמר בארכיון.`);
+        renderArchivedReportsTable();
+      }
+    }
+
+    function renderArchivedReportsTable() {
+      const tbody = document.getElementById('archivedReportsTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      const showOldCheckbox = document.getElementById('showOldReportsCheckbox');
+      const showOld = showOldCheckbox && showOldCheckbox.checked;
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      const visibleReports = showOld ? generatedReports : generatedReports.filter(r => new Date(r.generatedAt) >= sixMonthsAgo);
+
+      if (generatedReports.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">אין עדיין דוחות מאורכבים במערכת.</td></tr>`;
+        return;
+      }
+      if (visibleReports.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">אין דוחות מששת החודשים האחרונים. סמנו למעלה כדי לראות דוחות ישנים יותר.</td></tr>`;
+        return;
+      }
+
+      visibleReports.slice().sort((a,b) => new Date(b.generatedAt) - new Date(a.generatedAt)).forEach(r => {
+        const typeBadge = r.reportType === 'month' ? '<span class="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-lg">חודשי</span>' : '<span class="px-2 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-lg">שנתי כולל</span>';
+        const netoColor = r.neto >= 0 ? 'text-emerald-600' : 'text-rose-600';
+        
+        const row = `
+          <tr class="border-b border-slate-100 hover:bg-slate-50/50">
+            <td class="p-3 font-semibold text-slate-900">${r.reportName}</td>
+            <td class="p-3">${typeBadge}</td>
+            <td class="p-3 text-emerald-600 font-medium">+${currentUserCurrency}${r.totalIncome.toLocaleString()}</td>
+            <td class="p-3 text-rose-500 font-medium">-${currentUserCurrency}${r.totalExpense.toLocaleString()}</td>
+            <td class="p-3 font-bold ${netoColor}">${currentUserCurrency}${r.neto.toLocaleString()}</td>
+            <td class="p-3 text-left space-x-1">
+              <button onclick="viewArchivedReport('${r.id}')" class="px-2.5 py-1 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition">👁️ הצג והדפס דוח</button>
+              <button onclick="emailArchivedReport('${r.id}')" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition" title="שלח דוח זה במייל">📧 שלח במייל</button>
+              <button onclick="deleteArchivedReport('${r.id}')" class="px-2.5 py-1 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition" title="מחק מהארכיון">🗑️</button>
+            </td>
+          </tr>
+        `;
+        tbody.insertAdjacentHTML('beforeend', row);
+      });
+    }
+
+    function closeReportView() {
+      document.getElementById('printReportArea').classList.add('hidden');
+    }
+
+    function viewArchivedReport(reportId) {
+      const rep = generatedReports.find(r => r.id === reportId);
+      if (!rep) { alert('דוח לא נמצא.'); return; }
+
+      let rowsHtml = '';
+      (rep.transactionsSnapshot || []).forEach(t => {
+        const isExp = t.actionType.includes('הוצאה');
+        rowsHtml += `
+          <tr class="border-b border-slate-200 text-xs">
+            <td class="p-2 py-2">${new Date(t.timestamp).toLocaleDateString('he-IL')}</td>
+            <td class="p-2">${t.category || 'כללי'}</td>
+            <td class="p-2">${t.description}</td>
+            <td class="p-2 font-bold ${isExp ? 'text-rose-600' : 'text-emerald-600'}">${isExp ? '-' : '+'}${currentUserCurrency}${parseFloat(t.amount).toLocaleString()}</td>
+          </tr>
+        `;
+      });
+
+      let breakdownHtml = '';
+      Object.keys(rep.breakdown).forEach(cat => {
+        breakdownHtml += `
+          <div class="flex justify-between border-b border-slate-100 py-1 text-xs">
+            <span>${cat}:</span>
+            <span class="font-bold">${currentUserCurrency}${rep.breakdown[cat].toLocaleString()}</span>
+          </div>
+        `;
+      });
+
+      const netColor = rep.neto >= 0 ? 'text-emerald-600' : 'text-rose-600';
+      const reportArea = document.getElementById('printReportArea');
+      
+      reportArea.innerHTML = `
+        <div class="w-full text-right" dir="rtl" style="font-family: 'Assistant', sans-serif;">
+          <div class="no-print mb-6 flex justify-end gap-2">
+            <button onclick="emailArchivedReport('${rep.id}')" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח דוח זה במייל</button>
+            <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור וחזור למערכת</button>
+          </div>
+          <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-3 mb-6">
+            <div>
+              <h1 class="text-2xl font-black text-indigo-600">FamilyCent</h1>
+              <p class="text-xs text-slate-500">${rep.reportName}</p>
+            </div>
+            <div class="text-left">
+              <p class="text-[10px] text-slate-400">בעלי החשבון: ${rep.email}</p>
+              <p class="text-[10px] text-slate-400">תאריך הפקה: ${new Date(rep.generatedAt).toLocaleDateString('he-IL')}</p>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-3 gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 text-center">
+            <div>
+              <span class="text-xs text-slate-500 block">סה"כ הכנסות בתקופה</span>
+              <span class="text-md font-bold text-emerald-600">${currentUserCurrency}${rep.totalIncome.toLocaleString()}</span>
+            </div>
+            <div>
+              <span class="text-xs text-slate-500 block">סה"כ הוצאות בתקופה</span>
+              <span class="text-md font-bold text-rose-600">${currentUserCurrency}${rep.totalExpense.toLocaleString()}</span>
+            </div>
+            <div>
+              <span class="text-xs text-slate-500 block">יתרה נטו</span>
+              <span class="text-md font-bold ${netColor}">${currentUserCurrency}${rep.neto.toLocaleString()}</span>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-3 gap-6">
+            <div class="col-span-2">
+              <h3 class="text-sm font-bold text-slate-800 mb-2 border-b pb-1">פירוט התנועות בדוח</h3>
+              <table class="w-full border-collapse text-right">
+                <thead>
+                  <tr class="bg-indigo-50 border-b border-indigo-200 text-[11px] font-bold text-slate-600">
+                    <th class="p-2">תאריך</th>
+                    <th class="p-2">קטגוריה</th>
+                    <th class="p-2">תיאור</th>
+                    <th class="p-2">סכום</th>
+                  </tr>
+                </thead>
+                <tbody>${rowsHtml || '<tr><td colspan="4" class="text-center p-2 text-slate-400">אין תנועות מתועדות בתקופה זו.</td></tr>'}</tbody>
+              </table>
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-slate-800 mb-2 border-b pb-1">פילוח הוצאות קטגוריאלי</h3>
+              <div class="space-y-1">${breakdownHtml || '<p class="text-xs text-slate-400">אין הוצאות מתועדות בתקופה זו.</p>'}</div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      reportArea.classList.remove('hidden');
+      window.print();
+    }
+
+    async function deleteArchivedReport(reportId) {
+      if (!confirm("האם למחוק דוח מאורכב זה מהרשימה? (פעולה זו לא תמחק את התנועות עצמן בלוח הראשי)")) return;
+      const { error } = await sb.from('reports').delete().eq('id', reportId);
+      if (error) { console.error(error); alert('שגיאה במחיקת הדוח.'); return; }
+      generatedReports = generatedReports.filter(r => r.id !== reportId);
+      renderArchivedReportsTable();
+    }
+
+    function renderAndPrintRawReport(title, tFiltered) {
+      let totalInc = 0, totalExp = 0, catBreakdown = {}, rowsHtml = '';
+      tFiltered.forEach(t => {
+        const isExp = t.actionType.includes('הוצאה');
+        const amt = parseFloat(t.amount) || 0;
+        if (isExp) { totalExp += amt; catBreakdown[t.category] = (catBreakdown[t.category] || 0) + amt; }
+        else { totalInc += amt; }
+        rowsHtml += `<tr class="border-b border-slate-200 text-xs"><td class="p-2 py-2">${new Date(t.timestamp).toLocaleDateString('he-IL')}</td><td class="p-2">${t.category || 'כללי'}</td><td class="p-2">${t.description}</td><td class="p-2 font-bold ${isExp ? 'text-rose-600' : 'text-emerald-600'}">${isExp ? '-' : '+'}${currentUserCurrency}${amt.toLocaleString()}</td></tr>`;
+      });
+      let breakdownHtml = '';
+      Object.keys(catBreakdown).forEach(cat => { breakdownHtml += `<div class="flex justify-between border-b border-slate-100 py-1 text-xs"><span>${cat}:</span><span class="font-bold">${currentUserCurrency}${catBreakdown[cat].toLocaleString()}</span></div>`; });
+      const net = totalInc - totalExp;
+      window.__lastRawReport = { title, email: currentUserEmail, totalIncome: totalInc, totalExpense: totalExp, neto: net, breakdown: catBreakdown, reportName: title };
+      const reportArea = document.getElementById('printReportArea');
+      reportArea.innerHTML = `
+        <div class="w-full text-right" dir="rtl" style="font-family: 'Assistant', sans-serif;">
+          <div class="no-print mb-6 flex justify-end gap-2">
+            <button onclick="emailArchivedReport(null, true)" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח דוח זה במייל</button>
+            <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור וחזור למערכת</button>
+          </div>
+          <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-3 mb-6">
+            <div><h1 class="text-2xl font-black text-indigo-600">FamilyCent</h1><p class="text-xs text-slate-500">${title}</p></div>
+            <div class="text-left"><h2 class="text-md font-bold text-slate-800">${document.getElementById('navFamilyName').innerText}</h2></div>
+          </div>
+          <div class="grid grid-cols-3 gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 text-center">
+            <div><span class="text-xs text-slate-500 block">סה"כ הכנסות</span><span class="text-md font-bold text-emerald-600">${currentUserCurrency}${totalInc.toLocaleString()}</span></div>
+            <div><span class="text-xs text-slate-500 block">סה"כ הוצאות</span><span class="text-md font-bold text-rose-600">${currentUserCurrency}${totalExp.toLocaleString()}</span></div>
+            <div><span class="text-xs text-slate-500 block">יתרה</span><span class="text-md font-bold ${net >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${currentUserCurrency}${net.toLocaleString()}</span></div>
+          </div>
+          <div class="grid grid-cols-3 gap-6">
+            <div class="col-span-2">
+              <h3 class="text-sm font-bold text-slate-800 mb-2 border-b pb-1">פירוט תנועות</h3>
+              <table class="w-full border-collapse text-right">
+                <thead><tr class="bg-indigo-50 border-b border-indigo-200 text-[11px] font-bold text-slate-600"><th class="p-2">תאריך</th><th class="p-2">קטגוריה</th><th class="p-2">תיאור</th><th class="p-2">סכום</th></tr></thead>
+                <tbody>${rowsHtml}</tbody>
+              </table>
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-slate-800 mb-2 border-b pb-1">פילוח קטגוריות</h3>
+              <div class="space-y-1">${breakdownHtml || '<p class="text-xs text-slate-400">אין הוצאות.</p>'}</div>
+            </div>
+          </div>
+        </div>`;
+      reportArea.classList.remove('hidden'); 
+      window.print(); 
+    }
+  </script>
+</body>
+</html>
