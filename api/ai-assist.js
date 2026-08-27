@@ -9,7 +9,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'AI_API_KEY לא מוגדר בהגדרות הפרויקט ב-Vercel' });
   }
 
-  const { mode, description, categories, imageBase64 } = req.body || {};
+  const { mode, description, categories, imageBase64, question, financialSummary } = req.body || {};
 
   try {
     if (mode === 'suggest_category') {
@@ -33,6 +33,36 @@ module.exports = async function handler(req, res) {
       const data = await response.json();
       const suggestion = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ? data.choices[0].message.content.trim() : '';
       return res.status(200).json({ suggestion });
+    }
+
+    if (mode === 'advisor') {
+      if (!financialSummary) {
+        return res.status(400).json({ error: 'חסר financialSummary' });
+      }
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'אתה יועץ פיננסי אישי ידידותי לאפליקציית ניהול תקציב משפחתי בשם FamilyCent. תענה תמיד בעברית, בטון חם ותומך אך ישיר. קיבלת סיכום נתונים פיננסיים של המשתמש (הכנסות, הוצאות לפי קטגוריה, תקציבים, יעדי חיסכון, והשוואה לחודשים קודמים). תן ניתוח קצר וממוקד: איפה ההוצאות גדלו, איפה אפשר לחסוך, אילו תקציבים עומדים לחרוג, כמה אפשר להפריש לחיסכון החודש, והשוואה לחודשים קודמים. אם המשתמש שאל שאלה ספציפית - התמקד בה. תשובה בפורמט טקסט פשוט (לא markdown), עד כ-200 מילים, עם שורות קצרות וברורות.'
+            },
+            {
+              role: 'user',
+              content: `נתוני התקציב שלי:\n${financialSummary}\n\n${question ? `השאלה שלי: ${question}` : 'מה כדאי לי לעשות החודש? תן לי ניתוח כללי.'}`
+            }
+          ],
+          max_tokens: 500,
+          temperature: 0.4
+        })
+      });
+      const data = await response.json();
+      const advice = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ? data.choices[0].message.content.trim() : '';
+      if (!advice) return res.status(500).json({ error: 'לא התקבלה תשובה מה-AI' });
+      return res.status(200).json({ advice });
     }
 
     if (mode === 'parse_receipt') {
