@@ -14,6 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <style>
     body { font-family: 'Assistant', sans-serif; }
     .page { display: none !important; }
@@ -246,6 +247,7 @@
           <button id="btnTabMain" onclick="switchTab('main')" class="w-full text-right px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md transition flex items-center gap-2">📊 לוח בקרה ראשי</button>
           <button id="btnTabReports" onclick="switchTab('reports')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">📋 ארכיון דוחות אישיים</button>
           <button id="btnTabBudgets" onclick="switchTab('budgets')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">🎯 תקציבים ויעדים</button>
+          <button id="btnTabCalendar" onclick="switchTab('calendar')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">📅 לוח שנה פיננסי</button>
           
           <!-- כפתור ניווט למנהל בלבד -->
           <button id="btnTabAdmin" onclick="switchTab('admin')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-amber-400 hover:text-amber-300 hidden">🔑 פאנל מנהל מערכת</button>
@@ -259,8 +261,8 @@
       </div>
     </aside>
 
-    <!-- כפתור צף - תמיד גלוי על המסך, גם בגלילה למטה -->
-    <button onclick="openModal()" class="fixed bottom-6 left-6 md:bottom-8 md:left-8 z-40 w-16 h-16 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-3xl font-bold shadow-2xl flex items-center justify-center transition transform hover:scale-105 active:scale-95 no-print" title="הוספת פעולה חדשה">
+    <!-- כפתור צף - תמיד גלוי על המסך, גם בגלילה למטה. הפעולה משתנה לפי הלשונית הפעילה -->
+    <button id="floatingAddBtn" onclick="handleFloatingAddClick()" class="fixed bottom-6 left-6 md:bottom-8 md:left-8 z-40 w-16 h-16 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-3xl font-bold shadow-2xl flex items-center justify-center transition transform hover:scale-105 active:scale-95 no-print" title="הוספת פעולה חדשה">
       +
     </button>
 
@@ -269,11 +271,53 @@
       
       <!-- לשונית א: לוח בקרה ראשי (הזנת נתונים שוטפת) -->
       <div id="tabContentMain" class="tab-content active">
+        <div class="bg-white rounded-2xl border border-slate-200/60 shadow-md p-6 mb-6 no-print">
+          <h2 class="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">📊 מצב המשפחה - החודש</h2>
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div class="text-center">
+              <p class="text-[11px] text-slate-400 font-bold mb-1">💰 יתרה נוכחית</p>
+              <p id="statusBalance" class="text-lg sm:text-xl font-extrabold text-slate-900">-</p>
+            </div>
+            <div class="text-center">
+              <p class="text-[11px] text-slate-400 font-bold mb-1">📈 הכנסות החודש</p>
+              <p id="statusIncome" class="text-lg sm:text-xl font-extrabold text-emerald-600">-</p>
+            </div>
+            <div class="text-center">
+              <p class="text-[11px] text-slate-400 font-bold mb-1">📉 הוצאות החודש</p>
+              <p id="statusExpense" class="text-lg sm:text-xl font-extrabold text-rose-500">-</p>
+            </div>
+            <div class="text-center">
+              <p class="text-[11px] text-slate-400 font-bold mb-1">🎯 נשאר מהתקציב</p>
+              <p id="statusBudgetLeft" class="text-lg sm:text-xl font-extrabold text-indigo-600">-</p>
+            </div>
+            <div class="text-center">
+              <p class="text-[11px] text-slate-400 font-bold mb-1">🏆 יעדי חיסכון</p>
+              <p id="statusGoals" class="text-lg sm:text-xl font-extrabold text-amber-600">-</p>
+            </div>
+            <div class="text-center">
+              <p class="text-[11px] text-slate-400 font-bold mb-1">⚠️ התראות</p>
+              <p id="statusAlertsCount" class="text-lg sm:text-xl font-extrabold text-slate-700">0</p>
+            </div>
+          </div>
+          <div id="statusAlertsList" class="mt-4 space-y-1.5"></div>
+        </div>
         <div id="budgetAlertBanner" class="hidden mb-6 no-print"></div>
         <div class="bg-gradient-to-l from-indigo-50 to-white border border-indigo-100 rounded-2xl p-5 mb-6 no-print">
           <h3 class="text-sm font-bold text-indigo-700 mb-2 flex items-center gap-1">💡 תובנות חכמות</h3>
           <div id="insightsCard"></div>
         </div>
+
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md mb-6 no-print">
+          <h3 class="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">🤖 היועץ הפיננסי של FamilyCent</h3>
+          <p class="text-[11px] text-slate-400 mb-4">שאלו שאלה חופשית, או פשוט לחצו "מה כדאי לי לעשות החודש?" לניתוח כללי</p>
+          <div class="flex flex-col sm:flex-row gap-2 mb-3">
+            <input id="advisorQuestionInput" type="text" placeholder="למשל: איפה אני יכול לחסוך החודש?" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-indigo-500">
+            <button onclick="askFinancialAdvisor()" id="advisorAskBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2 rounded-xl text-sm whitespace-nowrap transition">💬 שאל את היועץ</button>
+          </div>
+          <button onclick="askFinancialAdvisor(true)" class="text-xs font-bold text-indigo-600 hover:underline mb-2">✨ מה כדאי לי לעשות החודש? (ניתוח כללי)</button>
+          <div id="advisorResponse" class="mt-3 text-sm text-slate-700 whitespace-pre-line bg-slate-50 border border-slate-100 rounded-xl p-4 hidden"></div>
+        </div>
+
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8 no-print">
           <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
             <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">נשאר לכם בחשבון</p>
@@ -386,6 +430,23 @@
             <canvas id="trendChart"></canvas>
           </div>
         </div>
+
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md mt-8 no-print">
+          <h3 class="text-lg font-bold text-slate-900 mb-1">📊 השוואת חודשים</h3>
+          <p class="text-[11px] text-slate-400 mb-4">בחרו שני חודשים כדי להשוות הוצאות לפי קטגוריה</p>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 items-end mb-4">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">חודש ראשון</label>
+              <input id="compareMonthA" type="month" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">חודש שני</label>
+              <input id="compareMonthB" type="month" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+            </div>
+            <button onclick="renderMonthComparison()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg text-sm transition">השווה</button>
+          </div>
+          <div id="monthComparisonResult"></div>
+        </div>
       </div>
 
       <!-- לשונית ב: לוח בקרה ואומדן דוחות אישיים -->
@@ -453,6 +514,26 @@
               <p class="text-[11px] text-slate-400 mb-4">הוסיפו פעולה קבועה חדשה דרך כפתור "+ פעולה חדשה" וסמנו את התיבה "הפוך לפעולה קבועה". הפעולות ייווצרו אוטומטית מדי חודש.</p>
               <div id="recurringList" class="space-y-2"></div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- לשונית: לוח שנה פיננסי -->
+      <div id="tabContentCalendar" class="tab-content">
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
+          <div class="flex justify-between items-center mb-4">
+            <button onclick="changeCalendarMonth(-1)" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-lg font-bold" title="חודש קודם">›</button>
+            <h2 id="calendarMonthLabel" class="text-lg font-bold text-slate-900"></h2>
+            <button onclick="changeCalendarMonth(1)" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-lg font-bold" title="חודש הבא">‹</button>
+          </div>
+          <div class="grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-400 mb-2">
+            <div>א</div><div>ב</div><div>ג</div><div>ד</div><div>ה</div><div>ו</div><div>ש</div>
+          </div>
+          <div id="calendarGrid" class="grid grid-cols-7 gap-1"></div>
+          <div class="flex gap-4 mt-4 text-[11px] text-slate-500 flex-wrap border-t border-slate-100 pt-3">
+            <span>🟢 הכנסה</span>
+            <span>🔴 הוצאה</span>
+            <span>🔁 פעולה קבועה</span>
           </div>
         </div>
       </div>
@@ -687,8 +768,8 @@
     <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden p-6 space-y-4">
       <h3 id="modalActionTitle" class="font-bold text-lg text-slate-900">הוספת פעולה חדשה לתקציב</h3>
       <div>
-        <button type="button" id="scanReceiptBtn" onclick="triggerReceiptUpload()" class="w-full bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-xl py-2.5 text-sm font-bold transition">📷 מלא אוטומטית מצילום חשבונית</button>
-        <input type="file" id="receiptFileInput" accept="image/*" onchange="handleReceiptUpload(this)" class="hidden">
+        <button type="button" id="scanReceiptBtn" onclick="triggerReceiptUpload()" class="w-full bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-xl py-2.5 text-sm font-bold transition">📷 מלא אוטומטית מצילום/PDF של חשבונית</button>
+        <input type="file" id="receiptFileInput" accept="image/*,application/pdf" onchange="handleReceiptUpload(this)" class="hidden">
       </div>
       <div>
         <label class="block text-sm font-semibold text-slate-700 mb-1">סוג הפעולה</label>
@@ -782,6 +863,9 @@
     /* --- סוף מיגרציה --- */
 
     window.addEventListener('DOMContentLoaded', async () => {
+      if (typeof pdfjsLib !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      }
       normalizeEmailKeysMigration();
       initDarkMode();
       /* ניקוי חד-פעמי: הסרת חשבון "מנהל ברירת מחדל" ישן שנשאר משמורת דפדפן קודמת (ממערכת ההתחברות המקומית הישנה) */
@@ -794,6 +878,16 @@
 
       renderCategoryOptions();
       updateFilterCategoryDropdown();
+
+      /* מילוי ברירת מחדל לבחירת חודשים בהשוואת חודשים: החודש הנוכחי והקודם */
+      const nowForCompare = new Date();
+      const curMonthStr = `${nowForCompare.getFullYear()}-${String(nowForCompare.getMonth() + 1).padStart(2, '0')}`;
+      const prevDate = new Date(nowForCompare.getFullYear(), nowForCompare.getMonth() - 1, 1);
+      const prevMonthStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+      const compareA = document.getElementById('compareMonthA');
+      const compareB = document.getElementById('compareMonthB');
+      if (compareA) compareA.value = prevMonthStr;
+      if (compareB) compareB.value = curMonthStr;
 
       const toggleProfilePassword = document.getElementById('toggleProfilePassword');
       const profilePasswordInput = document.getElementById('profilePassword');
@@ -1071,6 +1165,104 @@
       });
     }
 
+    function updateFamilyStatusCard() {
+      const balanceEl = document.getElementById('statusBalance');
+      if (!balanceEl) return;
+
+      const now = new Date();
+      let allTimeIncome = 0, allTimeExpense = 0;
+      let monthIncome = 0, monthExpense = 0;
+      let monthSpendByCategory = {};
+
+      localTransactions.forEach(t => {
+        const amt = parseFloat(t.amount) || 0;
+        const isExp = t.actionType && t.actionType.includes('הוצאה');
+        if (isExp) { allTimeExpense += amt; } else { allTimeIncome += amt; }
+
+        const d = new Date(t.timestamp);
+        if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+          if (isExp) {
+            monthExpense += amt;
+            if (t.category) monthSpendByCategory[t.category] = (monthSpendByCategory[t.category] || 0) + amt;
+          } else {
+            monthIncome += amt;
+          }
+        }
+      });
+
+      const budgets = getUserBudgets();
+      let totalBudget = 0, totalSpentInBudgeted = 0;
+      Object.keys(budgets).forEach(cat => {
+        totalBudget += budgets[cat];
+        totalSpentInBudgeted += (monthSpendByCategory[cat] || 0);
+      });
+      const budgetLeft = totalBudget - totalSpentInBudgeted;
+
+      const goals = getUserGoals();
+      let goalsText = '-';
+      if (goals.length > 0) {
+        const totalTarget = goals.reduce((s, g) => s + g.target, 0);
+        const totalCurrent = goals.reduce((s, g) => s + g.current, 0);
+        const pct = totalTarget > 0 ? Math.round((totalCurrent / totalTarget) * 100) : 0;
+        goalsText = `${pct}%`;
+      }
+
+      let alertsCount = 0;
+      let alertLines = [];
+      Object.keys(budgets).forEach(cat => {
+        if (budgets[cat] > 0 && (monthSpendByCategory[cat] || 0) > budgets[cat]) {
+          alertsCount++;
+          alertLines.push(`⚠️ אתם בדרך לחרוג מתקציב "${cat}"`);
+        } else if (budgets[cat] > 0) {
+          const left = budgets[cat] - (monthSpendByCategory[cat] || 0);
+          if (left > 0 && left <= budgets[cat] * 0.15) {
+            alertsCount++;
+            alertLines.push(`🎯 נשארו ${currentUserCurrency}${Math.round(left).toLocaleString()} עד תקרת התקציב ב"${cat}"`);
+          }
+        }
+      });
+      const recurring = getUserRecurring();
+      recurring.forEach(r => {
+        const daysUntil = r.dayOfMonth - now.getDate();
+        const alreadyGenerated = r.lastGenMonth === now.getMonth() && r.lastGenYear === now.getFullYear();
+        if (daysUntil >= 0 && daysUntil <= 5 && !alreadyGenerated) {
+          alertsCount++;
+          alertLines.push(`🔔 התשלום הקבוע של "${r.description}" מתקרב (בעוד ${daysUntil} ימים)`);
+        }
+      });
+      const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      let lastMonthSpendByCategory = {};
+      localTransactions.forEach(t => {
+        const d = new Date(t.timestamp);
+        if (t.actionType && t.actionType.includes('הוצאה') && d.getMonth() === lastMonthDate.getMonth() && d.getFullYear() === lastMonthDate.getFullYear()) {
+          lastMonthSpendByCategory[t.category] = (lastMonthSpendByCategory[t.category] || 0) + (parseFloat(t.amount) || 0);
+        }
+      });
+      Object.keys(monthSpendByCategory).forEach(cat => {
+        const prev = lastMonthSpendByCategory[cat] || 0;
+        if (prev >= 100) {
+          const pct = Math.round(((monthSpendByCategory[cat] - prev) / prev) * 100);
+          if (pct >= 25) { alertsCount++; alertLines.push(`📈 ההוצאות על "${cat}" עלו ב-${pct}% החודש`); }
+        }
+      });
+
+      document.getElementById('statusBalance').innerText = `${currentUserCurrency}${(allTimeIncome - allTimeExpense).toLocaleString()}`;
+      document.getElementById('statusIncome').innerText = `${currentUserCurrency}${monthIncome.toLocaleString()}`;
+      document.getElementById('statusExpense').innerText = `${currentUserCurrency}${monthExpense.toLocaleString()}`;
+      document.getElementById('statusBudgetLeft').innerText = totalBudget > 0 ? `${currentUserCurrency}${budgetLeft.toLocaleString()}` : '-';
+      document.getElementById('statusGoals').innerText = goalsText;
+      document.getElementById('statusAlertsCount').innerText = alertsCount;
+
+      const alertsListEl = document.getElementById('statusAlertsList');
+      if (alertsListEl) {
+        if (alertLines.length === 0) {
+          alertsListEl.innerHTML = '';
+        } else {
+          alertsListEl.innerHTML = alertLines.slice(0, 5).map(l => `<p class="text-xs sm:text-sm text-slate-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">${l}</p>`).join('');
+        }
+      }
+    }
+
     function checkBudgetAlerts() {
       const banner = document.getElementById('budgetAlertBanner');
       if (!banner) return;
@@ -1206,6 +1398,89 @@
     /* --- סוף שליחת מייל --- */
 
     /* --- AI: דרך פונקציית שרת מאובטחת (/api/ai-assist), בלי מפתח אישי --- */
+    /* --- היועץ הפיננסי --- */
+    function buildFinancialSummaryText() {
+      const now = new Date();
+      const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      let monthSpend = {}, lastMonthSpend = {}, monthIncome = 0, monthExpense = 0;
+
+      localTransactions.forEach(t => {
+        const d = new Date(t.timestamp);
+        const amt = parseFloat(t.amount) || 0;
+        const isExp = t.actionType && t.actionType.includes('הוצאה');
+        if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+          if (isExp) { monthExpense += amt; monthSpend[t.category || 'כללי'] = (monthSpend[t.category || 'כללי'] || 0) + amt; }
+          else { monthIncome += amt; }
+        } else if (isExp && d.getMonth() === lastMonthDate.getMonth() && d.getFullYear() === lastMonthDate.getFullYear()) {
+          lastMonthSpend[t.category || 'כללי'] = (lastMonthSpend[t.category || 'כללי'] || 0) + amt;
+        }
+      });
+
+      const budgets = getUserBudgets();
+      const goals = getUserGoals();
+
+      let lines = [];
+      lines.push(`מטבע: ${currentUserCurrency}`);
+      lines.push(`הכנסות החודש: ${monthIncome.toLocaleString()}`);
+      lines.push(`הוצאות החודש: ${monthExpense.toLocaleString()}`);
+      lines.push(`יתרה נטו החודש: ${(monthIncome - monthExpense).toLocaleString()}`);
+
+      lines.push(`\nהוצאות החודש לפי קטגוריה (מול חודש קודם):`);
+      Object.keys(monthSpend).forEach(cat => {
+        const prev = lastMonthSpend[cat] || 0;
+        lines.push(`- ${cat}: ${monthSpend[cat].toLocaleString()} (חודש קודם: ${prev.toLocaleString()})`);
+      });
+
+      if (Object.keys(budgets).length > 0) {
+        lines.push(`\nתקציבים חודשיים שהוגדרו:`);
+        Object.keys(budgets).forEach(cat => {
+          lines.push(`- ${cat}: תקציב ${budgets[cat].toLocaleString()}, נוצל עד כה ${(monthSpend[cat] || 0).toLocaleString()}`);
+        });
+      }
+
+      if (goals.length > 0) {
+        lines.push(`\nיעדי חיסכון:`);
+        goals.forEach(g => { lines.push(`- ${g.name}: ${g.current.toLocaleString()} מתוך ${g.target.toLocaleString()}`); });
+      }
+
+      return lines.join('\n');
+    }
+
+    async function askFinancialAdvisor(generalMode) {
+      const questionInput = document.getElementById('advisorQuestionInput');
+      const question = generalMode ? '' : questionInput.value.trim();
+      const responseEl = document.getElementById('advisorResponse');
+      const btn = document.getElementById('advisorAskBtn');
+
+      const originalBtnText = btn.innerText;
+      btn.innerText = '⏳ חושב...';
+      btn.disabled = true;
+      responseEl.classList.remove('hidden');
+      responseEl.innerText = 'מנתח את הנתונים שלכם...';
+
+      try {
+        const financialSummary = buildFinancialSummaryText();
+        const response = await fetch('/api/ai-assist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'advisor', question, financialSummary })
+        });
+        const data = await response.json();
+        if (data.advice) {
+          responseEl.innerText = data.advice;
+        } else {
+          responseEl.innerText = 'לא הצלחנו לקבל תשובה מהיועץ. נסו שוב.';
+        }
+      } catch (err) {
+        console.error(err);
+        responseEl.innerText = 'שגיאה בפנייה ליועץ הפיננסי. נסו שוב.';
+      } finally {
+        btn.innerText = originalBtnText;
+        btn.disabled = false;
+      }
+    }
+    /* --- סוף היועץ הפיננסי --- */
+
     async function aiSuggestCategory(btnEl) {
       const desc = document.getElementById('descriptionInput').value.trim();
       if (!desc) { alert('כתבו קודם תיאור לפעולה, ואז לחצו על הצעת הקטגוריה'); return; }
@@ -1241,40 +1516,61 @@
       document.getElementById('receiptFileInput').click();
     }
 
+    async function pdfFileToImageBase64(file) {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      return canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+    }
+
     async function handleReceiptUpload(inputEl) {
       const file = inputEl.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64 = e.target.result.split(',')[1];
-        const btn = document.getElementById('scanReceiptBtn');
-        const original = btn.innerText;
-        btn.innerText = '⏳ סורק חשבונית...';
-        btn.disabled = true;
-        try {
-          const response = await fetch('/api/ai-assist', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: 'parse_receipt', imageBase64: base64 })
+      const btn = document.getElementById('scanReceiptBtn');
+      const original = btn.innerText;
+      btn.innerText = '⏳ סורק חשבונית...';
+      btn.disabled = true;
+
+      try {
+        let base64;
+        if (file.type === 'application/pdf') {
+          base64 = await pdfFileToImageBase64(file);
+        } else {
+          base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
           });
-          const data = await response.json();
-          if (data.amount) document.getElementById('amountInput').value = data.amount;
-          if (data.description) document.getElementById('descriptionInput').value = data.description;
-          if (!data.amount && !data.description) {
-            alert('לא הצלחנו לזהות פרטים בתמונה. נסו תמונה ברורה יותר או מלאו ידנית.');
-          } else {
-            alert('הפרטים מולאו אוטומטית מהחשבונית - בדקו ואשרו לפני השמירה.');
-          }
-        } catch (err) {
-          console.error(err);
-          alert('סריקת החשבונית נכשלה. נסו שוב.');
-        } finally {
-          btn.innerText = original;
-          btn.disabled = false;
-          inputEl.value = '';
         }
-      };
-      reader.readAsDataURL(file);
+
+        const response = await fetch('/api/ai-assist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'parse_receipt', imageBase64: base64 })
+        });
+        const data = await response.json();
+        if (data.amount) document.getElementById('amountInput').value = data.amount;
+        if (data.description) document.getElementById('descriptionInput').value = data.description;
+        if (!data.amount && !data.description) {
+          alert('לא הצלחנו לזהות פרטים בקובץ. נסו קובץ ברור יותר או מלאו ידנית.');
+        } else {
+          alert('הפרטים מולאו אוטומטית מהחשבונית - בדקו ואשרו לפני השמירה.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('סריקת החשבונית נכשלה. נסו שוב.');
+      } finally {
+        btn.innerText = original;
+        btn.disabled = false;
+        inputEl.value = '';
+      }
     }
     /* --- סוף AI --- */
 
@@ -1504,13 +1800,193 @@
         lines.push(`🔮 בקצב ההוצאות הנוכחי, צפויות החודש הוצאות של כ-${currentUserCurrency}${Math.round(projected).toLocaleString()} עד סוף החודש (${daysInMonth - daysPassed} ימים נותרו).`);
       }
 
+      /* התראות תקציב: נשאר עד התקרה, וחריגה צפויה בקצב הנוכחי */
+      const budgetsForInsights = getUserBudgets();
+      Object.keys(budgetsForInsights).forEach(cat => {
+        const limit = budgetsForInsights[cat];
+        if (!limit || limit <= 0) return;
+        const spent = thisMonthSpend[cat] || 0;
+        const remaining = limit - spent;
+        if (remaining > 0 && daysPassed > 0 && daysPassed < daysInMonth) {
+          const dailyAvgCat = spent / daysPassed;
+          const projectedCat = dailyAvgCat * daysInMonth;
+          if (projectedCat > limit && spent > 0) {
+            lines.push(`⚠️ אתם בדרך לחרוג מהתקציב של ${cat} - נשארו רק ${currentUserCurrency}${remaining.toLocaleString()} עד תקרת התקציב.`);
+          } else if (remaining < limit * 0.15) {
+            lines.push(`🎯 נשארו ${currentUserCurrency}${remaining.toLocaleString()} עד תקרת התקציב ב-${cat}.`);
+          }
+        }
+      });
+
+      /* תזכורת לתשלום קבוע שמתקרב */
+      const recurringForInsights = getUserRecurring();
+      recurringForInsights.forEach(r => {
+        const daysUntil = r.dayOfMonth - now.getDate();
+        const alreadyGenerated = r.lastGenMonth === now.getMonth() && r.lastGenYear === now.getFullYear();
+        if (daysUntil >= 0 && daysUntil <= 3 && !alreadyGenerated) {
+          lines.push(`🔔 התשלום הקבוע "${r.description}" (${currentUserCurrency}${r.amount}) מתקרב - בעוד ${daysUntil} ימים.`);
+        }
+      });
+
       if (lines.length === 0) {
         el.innerHTML = '<p class="text-sm text-slate-400">אין עדיין מספיק נתונים להצגת תובנות. המשיכו לתעד פעולות!</p>';
       } else {
         el.innerHTML = lines.map(l => `<p class="text-sm text-slate-700 mb-1.5 last:mb-0">${l}</p>`).join('');
       }
     }
-    /* --- סוף תובנות חכמות --- */
+    function renderMonthComparison() {
+      const valA = document.getElementById('compareMonthA').value;
+      const valB = document.getElementById('compareMonthB').value;
+      const resultEl = document.getElementById('monthComparisonResult');
+      if (!valA || !valB) { resultEl.innerHTML = '<p class="text-rose-500 text-sm text-center py-2">בחרו את שני החודשים להשוואה.</p>'; return; }
+
+      const [yearA, monthA] = valA.split('-').map(Number);
+      const [yearB, monthB] = valB.split('-').map(Number);
+
+      function sumByCategory(year, month) {
+        const map = {};
+        localTransactions.forEach(t => {
+          if (!t.actionType || !t.actionType.includes('הוצאה')) return;
+          const d = new Date(t.timestamp);
+          if (d.getFullYear() === year && (d.getMonth() + 1) === month) {
+            map[t.category || 'כללי'] = (map[t.category || 'כללי'] || 0) + (parseFloat(t.amount) || 0);
+          }
+        });
+        return map;
+      }
+
+      const dataA = sumByCategory(yearA, monthA);
+      const dataB = sumByCategory(yearB, monthB);
+      const monthNames = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+      const labelA = `${monthNames[monthA - 1]} ${yearA}`;
+      const labelB = `${monthNames[monthB - 1]} ${yearB}`;
+
+      const allCategories = Array.from(new Set([...Object.keys(dataA), ...Object.keys(dataB)])).sort();
+      if (allCategories.length === 0) {
+        resultEl.innerHTML = '<p class="text-slate-400 text-sm text-center py-2">אין נתונים באחד מהחודשים שנבחרו.</p>';
+        return;
+      }
+
+      let rows = allCategories.map(cat => {
+        const a = dataA[cat] || 0;
+        const b = dataB[cat] || 0;
+        let changeText, changeClass;
+        if (a === 0 && b === 0) { changeText = '0%'; changeClass = 'text-slate-400'; }
+        else if (a === 0) { changeText = 'חדש'; changeClass = 'text-amber-600'; }
+        else {
+          const pct = Math.round(((b - a) / a) * 100);
+          changeText = (pct > 0 ? '+' : '') + pct + '%';
+          changeClass = pct > 0 ? 'text-rose-500' : (pct < 0 ? 'text-emerald-600' : 'text-slate-400');
+        }
+        return `
+          <tr class="border-b border-slate-100">
+            <td class="p-2 font-semibold text-sm">${cat}</td>
+            <td class="p-2 text-sm text-slate-600">${currentUserCurrency}${a.toLocaleString()}</td>
+            <td class="p-2 text-sm text-slate-600">${currentUserCurrency}${b.toLocaleString()}</td>
+            <td class="p-2 text-sm font-bold ${changeClass}">${changeText}</td>
+          </tr>
+        `;
+      }).join('');
+
+      resultEl.innerHTML = `
+        <div class="overflow-x-auto">
+          <table class="w-full text-right">
+            <thead>
+              <tr class="border-b-2 border-slate-200">
+                <th class="p-2 text-xs font-bold text-slate-500">קטגוריה</th>
+                <th class="p-2 text-xs font-bold text-slate-500">${labelA}</th>
+                <th class="p-2 text-xs font-bold text-slate-500">${labelB}</th>
+                <th class="p-2 text-xs font-bold text-slate-500">שינוי</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    }
+    /* --- לוח שנה פיננסי (עם תאריך עברי) --- */
+    let calendarViewDate = new Date();
+
+    function changeCalendarMonth(delta) {
+      calendarViewDate = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + delta, 1);
+      renderFinancialCalendar();
+    }
+
+    function renderFinancialCalendar() {
+      const grid = document.getElementById('calendarGrid');
+      const label = document.getElementById('calendarMonthLabel');
+      if (!grid || !label) return;
+
+      const year = calendarViewDate.getFullYear();
+      const month = calendarViewDate.getMonth();
+      const monthNames = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+      label.innerText = `${monthNames[month]} ${year}`;
+
+      const firstDay = new Date(year, month, 1);
+      const startOffset = firstDay.getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      let eventsByDay = {};
+      localTransactions.forEach(t => {
+        const d = new Date(t.timestamp);
+        if (d.getFullYear() === year && d.getMonth() === month) {
+          const day = d.getDate();
+          if (!eventsByDay[day]) eventsByDay[day] = { income: false, expense: false, recurring: false };
+          if (t.actionType && t.actionType.includes('הוצאה')) eventsByDay[day].expense = true;
+          else eventsByDay[day].income = true;
+        }
+      });
+
+      const recurring = getUserRecurring();
+      recurring.forEach(r => {
+        const day = Math.min(Math.max(parseInt(r.dayOfMonth) || 1, 1), daysInMonth);
+        if (!eventsByDay[day]) eventsByDay[day] = { income: false, expense: false, recurring: false };
+        eventsByDay[day].recurring = true;
+      });
+
+      let hebrewFormatter = null;
+      try { hebrewFormatter = new Intl.DateTimeFormat('he-u-ca-hebrew', { day: 'numeric', month: 'short' }); } catch (e) { hebrewFormatter = null; }
+
+      let html = '';
+      for (let i = 0; i < startOffset; i++) { html += `<div class="h-20"></div>`; }
+
+      const today = new Date();
+      for (let day = 1; day <= daysInMonth; day++) {
+        const cellDate = new Date(year, month, day);
+        const isToday = cellDate.toDateString() === today.toDateString();
+        const hebrewLabel = hebrewFormatter ? hebrewFormatter.format(cellDate) : '';
+        const ev = eventsByDay[day] || {};
+        let dots = '';
+        if (ev.income) dots += '🟢';
+        if (ev.expense) dots += '🔴';
+        if (ev.recurring) dots += '🔁';
+
+        html += `
+          <div class="h-20 border ${isToday ? 'border-indigo-500 bg-indigo-50' : 'border-slate-100'} rounded-lg p-1.5 flex flex-col justify-between overflow-hidden">
+            <div class="flex justify-between items-start">
+              <span class="text-sm font-bold ${isToday ? 'text-indigo-700' : 'text-slate-700'}">${day}</span>
+              <span class="text-[9px] text-slate-400">${hebrewLabel}</span>
+            </div>
+            <div class="text-sm">${dots}</div>
+          </div>
+        `;
+      }
+
+      grid.innerHTML = html;
+    }
+    /* --- סוף לוח שנה פיננסי --- */
+
+    /* --- כפתור "+" הקשרי: הפעולה משתנה לפי הלשונית הפעילה --- */
+    function handleFloatingAddClick() {
+      const activeTab = document.querySelector('.tab-content.active');
+      if (!activeTab) { openModal(); return; }
+      if (activeTab.id === 'tabContentBudgets') {
+        const firstBudgetInput = document.querySelector('#budgetCategoriesList input[type="number"]');
+        if (firstBudgetInput) { firstBudgetInput.scrollIntoView({ behavior: 'smooth', block: 'center' }); firstBudgetInput.focus(); return; }
+      }
+      openModal();
+    }
+    /* --- סוף כפתור הקשרי --- */
 
     function escapeHtml(str) {
       if (!str) return '';
@@ -1603,7 +2079,11 @@
       document.getElementById('btnTabMain').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
       document.getElementById('btnTabReports').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
       document.getElementById('btnTabBudgets').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
+      document.getElementById('btnTabCalendar').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
       document.getElementById('btnTabAdmin').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-amber-400 hover:text-amber-300";
+
+      /* הכפתור הצף להוספת פעולה רלוונטי רק בלוח הבקרה הראשי */
+      document.getElementById('floatingAddBtn').classList.toggle('hidden', tabName !== 'main');
 
       if (tabName === 'main') {
         document.getElementById('tabContentMain').classList.add('active');
@@ -1616,6 +2096,10 @@
         document.getElementById('tabContentBudgets').classList.add('active');
         document.getElementById('btnTabBudgets').className = "w-full text-right px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md transition flex items-center gap-2";
         renderBudgetsTab();
+      } else if (tabName === 'calendar') {
+        document.getElementById('tabContentCalendar').classList.add('active');
+        document.getElementById('btnTabCalendar').className = "w-full text-right px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md transition flex items-center gap-2";
+        renderFinancialCalendar();
       } else if (tabName === 'admin') {
         document.getElementById('tabContentAdmin').classList.add('active');
         document.getElementById('btnTabAdmin').className = "w-full text-right px-4 py-3 rounded-xl bg-amber-600 text-slate-900 font-bold shadow-md transition flex items-center gap-2";
@@ -1901,6 +2385,7 @@
         renderTrendChart();
         checkBudgetAlerts();
         renderInsights();
+        updateFamilyStatusCard();
         return;
       }
 
@@ -1949,6 +2434,7 @@
       renderTrendChart();
       checkBudgetAlerts();
       renderInsights();
+      updateFamilyStatusCard();
     }
 
     function calculateYearlyBreakdown() {
