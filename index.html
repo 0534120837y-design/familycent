@@ -589,13 +589,16 @@
             <h2 id="calendarMonthLabel" class="text-lg font-bold text-slate-900"></h2>
             <button onclick="changeCalendarMonth(1)" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-lg font-bold" title="חודש הבא">‹</button>
           </div>
+          <div class="flex justify-end gap-2 mb-4">
+            <button onclick="printFinancialCalendar()" class="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition">🖨️ הדפסה / PDF / מייל</button>
+          </div>
           <div class="grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-400 mb-2">
             <div>א</div><div>ב</div><div>ג</div><div>ד</div><div>ה</div><div>ו</div><div>ש</div>
           </div>
           <div id="calendarGrid" class="grid grid-cols-7 gap-1"></div>
           <div class="flex gap-4 mt-4 text-[11px] text-slate-500 flex-wrap border-t border-slate-100 pt-3">
-            <span>🟢 הכנסה</span>
-            <span>🔴 הוצאה</span>
+            <span class="text-emerald-600 font-bold">■</span><span>הכנסה</span>
+            <span class="text-rose-600 font-bold">■</span><span>הוצאה</span>
             <span>🔁 פעולה קבועה</span>
           </div>
         </div>
@@ -1601,7 +1604,7 @@
         }
       } catch (err) {
         console.error(err);
-        responseEl.innerText = 'שגיאה בפנייה ליועץ הפיננסי. נסו שוב.';
+        responseEl.innerText = 'שגיאת רשת בפנייה ליועץ הפיננסי: ' + (err.message || err);
       } finally {
         btn.innerText = originalBtnText;
         btn.disabled = false;
@@ -2063,48 +2066,95 @@
         const d = new Date(t.timestamp);
         if (d.getFullYear() === year && d.getMonth() === month) {
           const day = d.getDate();
-          if (!eventsByDay[day]) eventsByDay[day] = { income: false, expense: false, recurring: false };
-          if (t.actionType && t.actionType.includes('הוצאה')) eventsByDay[day].expense = true;
-          else eventsByDay[day].income = true;
+          if (!eventsByDay[day]) eventsByDay[day] = { income: false, expense: false, recurring: false, items: [] };
+          const isExp = t.actionType && t.actionType.includes('הוצאה');
+          if (isExp) eventsByDay[day].expense = true; else eventsByDay[day].income = true;
+          eventsByDay[day].items.push({ desc: t.description || t.category || '', amount: parseFloat(t.amount) || 0, isExp });
         }
       });
 
       const recurring = getUserRecurring();
       recurring.forEach(r => {
         const day = Math.min(Math.max(parseInt(r.dayOfMonth) || 1, 1), daysInMonth);
-        if (!eventsByDay[day]) eventsByDay[day] = { income: false, expense: false, recurring: false };
+        if (!eventsByDay[day]) eventsByDay[day] = { income: false, expense: false, recurring: false, items: [] };
         eventsByDay[day].recurring = true;
       });
 
       let hebrewFormatter = null;
-      try { hebrewFormatter = new Intl.DateTimeFormat('he-u-ca-hebrew', { day: 'numeric', month: 'short' }); } catch (e) { hebrewFormatter = null; }
+      try { hebrewFormatter = new Intl.DateTimeFormat('he-IL-u-ca-hebrew', { day: 'numeric', month: 'short' }); } catch (e) { hebrewFormatter = null; }
 
       let html = '';
-      for (let i = 0; i < startOffset; i++) { html += `<div class="h-20"></div>`; }
+      for (let i = 0; i < startOffset; i++) { html += `<div class="h-24"></div>`; }
 
       const today = new Date();
       for (let day = 1; day <= daysInMonth; day++) {
         const cellDate = new Date(year, month, day);
         const isToday = cellDate.toDateString() === today.toDateString();
         const hebrewLabel = hebrewFormatter ? hebrewFormatter.format(cellDate) : '';
-        const ev = eventsByDay[day] || {};
-        let dots = '';
-        if (ev.income) dots += '🟢';
-        if (ev.expense) dots += '🔴';
-        if (ev.recurring) dots += '🔁';
+        const ev = eventsByDay[day] || { items: [] };
+        const recurringDot = ev.recurring ? '🔁' : '';
+
+        let itemsHtml = '';
+        (ev.items || []).slice(0, 2).forEach(it => {
+          const color = it.isExp ? 'text-rose-600' : 'text-emerald-600';
+          const shortDesc = it.desc.length > 8 ? it.desc.slice(0, 8) + '…' : it.desc;
+          itemsHtml += `<div class="truncate ${color}" title="${it.desc}: ${currentUserCurrency}${it.amount.toLocaleString()}">${shortDesc} ${it.isExp ? '-' : '+'}${it.amount.toLocaleString()}</div>`;
+        });
+        if ((ev.items || []).length > 2) {
+          itemsHtml += `<div class="text-slate-400">+${ev.items.length - 2} נוספות</div>`;
+        }
 
         html += `
-          <div class="h-20 border ${isToday ? 'border-indigo-500 bg-indigo-50' : 'border-slate-100'} rounded-lg p-1.5 flex flex-col justify-between overflow-hidden">
-            <div class="flex justify-between items-start">
+          <div class="h-24 border ${isToday ? 'border-indigo-500 bg-indigo-50' : 'border-slate-100'} rounded-lg p-1.5 flex flex-col overflow-hidden">
+            <div class="flex justify-between items-start mb-0.5">
               <span class="text-sm font-bold ${isToday ? 'text-indigo-700' : 'text-slate-700'}">${day}</span>
-              <span class="text-[9px] text-slate-400">${hebrewLabel}</span>
+              <span class="text-[10px] font-semibold text-indigo-400">${hebrewLabel}</span>
             </div>
-            <div class="text-sm">${dots}</div>
+            <div class="text-[9px] leading-tight space-y-0.5 flex-1 overflow-hidden">${itemsHtml}</div>
+            <div class="text-xs text-left">${recurringDot}</div>
           </div>
         `;
       }
 
       grid.innerHTML = html;
+    }
+
+    function printFinancialCalendar() {
+      const grid = document.getElementById('calendarGrid');
+      if (!grid) return;
+      const label = document.getElementById('calendarMonthLabel').innerText;
+      const reportArea = document.getElementById('printReportArea');
+      reportArea.innerHTML = `
+        <div class="w-full text-right" dir="rtl" style="font-family: 'Assistant', sans-serif;">
+          <div class="no-print mb-6 flex justify-end gap-2">
+            <button onclick="downloadReportPDF('לוח-שנה-${label.replace(/\s/g, '-')}.pdf')" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition">⬇️ הורד PDF</button>
+            <button onclick="emailFinancialCalendar('${label}')" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח במייל</button>
+            <button onclick="window.print()" class="px-5 py-2 bg-violet-600 text-white font-bold rounded-xl shadow-md hover:bg-violet-700 transition">🖨️ הדפסה</button>
+            <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור</button>
+          </div>
+          <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-3 mb-6">
+            <h1 class="text-2xl font-black text-indigo-600">FamilyCent - לוח שנה פיננסי</h1>
+            <p class="text-sm text-slate-600">${label}</p>
+          </div>
+          <div class="grid grid-cols-7 gap-1">${grid.outerHTML}</div>
+        </div>
+      `;
+      reportArea.classList.remove('hidden');
+    }
+
+    function emailFinancialCalendar(label) {
+      const year = calendarViewDate.getFullYear();
+      const month = calendarViewDate.getMonth();
+      let lines = [];
+      localTransactions.forEach(t => {
+        const d = new Date(t.timestamp);
+        if (d.getFullYear() === year && d.getMonth() === month) {
+          const isExp = t.actionType && t.actionType.includes('הוצאה');
+          lines.push(`${d.getDate()}/${month + 1} | ${t.description || t.category} | ${isExp ? '-' : '+'}${currentUserCurrency}${parseFloat(t.amount).toLocaleString()}`);
+        }
+      });
+      if (lines.length === 0) { showToast('אין תנועות בחודש זה לשליחה.'); return; }
+      sendEmail(`FamilyCent - לוח שנה פיננסי (${label})`, lines.join('\n'));
     }
     /* --- סוף לוח שנה פיננסי --- */
 
@@ -2928,7 +2978,10 @@
       const reportArea = document.getElementById('printReportArea');
       reportArea.innerHTML = `
         <div class="w-full text-right" dir="rtl">
-          <div class="no-print mb-6 flex justify-end">
+          <div class="no-print mb-6 flex justify-end gap-2">
+            <button onclick="downloadReportPDF('רשימת-תנועות.pdf')" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition">⬇️ הורד PDF</button>
+            <button onclick="emailFilteredTransactions()" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח במייל</button>
+            <button onclick="window.print()" class="px-5 py-2 bg-violet-600 text-white font-bold rounded-xl shadow-md hover:bg-violet-700 transition">🖨️ הדפסה</button>
             <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור וחזור למערכת</button>
           </div>
           <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-4 mb-6">
@@ -2945,7 +2998,6 @@
           </table>
         </div>`;
       reportArea.classList.remove('hidden');
-      window.print();
     }
 
     function generatePeriodicReport(type) {
