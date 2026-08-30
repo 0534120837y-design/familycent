@@ -15,6 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
   <style>
     body { font-family: 'Assistant', sans-serif; }
     .page { display: none !important; }
@@ -23,6 +24,10 @@
     .step.active { display: block; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes authBlobFloat1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(30px,-20px) scale(1.1); } }
+    @keyframes authBlobFloat2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-25px,25px) scale(1.05); } }
+    @keyframes authBlobFloat3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(20px,20px) scale(0.95); } }
     @media print {
       body * { visibility: hidden; }
       #printReportArea, #printReportArea * { visibility: visible; }
@@ -55,11 +60,52 @@
     }
     html.dark .shadow-md, html.dark .shadow-lg, html.dark .shadow-xl { box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important; }
     /* --- סוף מצב כהה --- */
+
+    /* --- רקע אנימטיבי למסך ההתחברות --- */
+    #authPage { position: relative; overflow: hidden; }
+    #authPage .auth-blob {
+      position: absolute; border-radius: 50%; filter: blur(60px); opacity: 0.35; z-index: 0;
+      animation: blob-float 14s ease-in-out infinite;
+    }
+    #authPage .auth-blob-1 { width: 380px; height: 380px; background: #6366f1; top: -100px; right: -80px; animation-delay: 0s; }
+    #authPage .auth-blob-2 { width: 320px; height: 320px; background: #10b981; bottom: -100px; left: -60px; animation-delay: 3s; }
+    #authPage .auth-blob-3 { width: 260px; height: 260px; background: #f59e0b; top: 40%; left: 50%; animation-delay: 6s; }
+    @keyframes blob-float {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33% { transform: translate(30px, -30px) scale(1.1); }
+      66% { transform: translate(-20px, 20px) scale(0.95); }
+    }
+    #authPage > *:not(.auth-blob) { position: relative; z-index: 1; }
   </style>
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800">
 
   <script>
+    /* --- הודעות קופצות עדינות (Toast) במקום alert() חוסם --- */
+    function showToast(message) {
+      const isError = /שגיאה|נכשל|לא נמצא|לא הצלחנו|אין נתונים|אינך|חובה|תקין\b/.test(message) && !/הצלחה|הצליח/.test(message);
+      let container = document.getElementById('toastContainer');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.style.direction = 'rtl';
+        container.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 sm:left-auto sm:right-6 sm:translate-x-0 z-[9999] flex flex-col gap-2 items-center sm:items-end w-[calc(100%-2rem)] sm:w-auto';
+        document.body.appendChild(container);
+      }
+      const toast = document.createElement('div');
+      toast.className = `max-w-sm w-full sm:w-auto px-4 py-3 rounded-xl shadow-2xl text-sm font-semibold text-white text-center sm:text-right ${isError ? 'bg-rose-600' : 'bg-slate-900'}`;
+      toast.style.animation = 'toastIn 0.25s ease-out';
+      toast.innerText = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.transition = 'opacity 0.3s, transform 0.3s';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        setTimeout(() => toast.remove(), 300);
+      }, 3200);
+    }
+    /* --- סוף הודעות Toast --- */
+
     let currentUserEmail = '';
     let currentUserId = null;
     let currentUserCurrency = '₪';
@@ -86,12 +132,12 @@
 
     async function submitNewPassword() {
       const newPassword = document.getElementById('newResetPasswordInput').value;
-      if (!newPassword || newPassword.length < 6) { alert('הסיסמה חייבת להכיל לפחות 6 תווים'); return; }
+      if (!newPassword || newPassword.length < 6) { showToast('הסיסמה חייבת להכיל לפחות 6 תווים'); return; }
       const { error } = await sb.auth.updateUser({ password: newPassword });
-      if (error) { alert('שגיאה בעדכון הסיסמה: ' + error.message); return; }
+      if (error) { showToast('שגיאה בעדכון הסיסמה: ' + error.message); return; }
       document.getElementById('resetPasswordModal').classList.add('hidden');
       document.getElementById('newResetPasswordInput').value = '';
-      alert('הסיסמה עודכנה בהצלחה!');
+      showToast('הסיסמה עודכנה בהצלחה!');
       const { data: { session } } = await sb.auth.getSession();
       if (session && session.user) { await completeLoginFlow(session.user); }
     }
@@ -122,12 +168,16 @@
   </script>
 
   <!-- עמוד 1: מסך כניסה והרשמה -->
-  <div id="authPage" class="page active w-full min-h-screen flex flex-col justify-center items-center py-12 px-4 bg-slate-100">
+  <div id="authPage" class="page active w-full min-h-screen flex flex-col justify-center items-center py-12 px-4 bg-gradient-to-br from-indigo-50 via-slate-50 to-emerald-50">
+    <div class="auth-blob auth-blob-1"></div>
+    <div class="auth-blob auth-blob-2"></div>
+    <div class="auth-blob auth-blob-3"></div>
     <div class="w-full sm:max-w-md">
       <div id="progressWrapper" class="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-4 hidden">
         <div id="progressBar" class="bg-indigo-600 h-2 rounded-full transition-all duration-500 ease-out shadow-sm" style="width: 33.33%"></div>
       </div>
       <div class="text-center mb-8">
+        <div class="text-5xl mb-2">💰</div>
         <h2 id="stepTitle" class="text-4xl font-extrabold text-slate-900 tracking-tight">FamilyCent</h2>
         <p id="stepSub" class="mt-2 text-sm text-slate-600 font-medium">אפליקציית ניהול תקציב משפחתי עצמאית ומאובטחת</p>
       </div>
@@ -340,6 +390,7 @@
               <div class="flex items-center gap-2">
                 <button onclick="exportToCSV()" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition">📥 אקסל CSV</button>
                 <button onclick="generatePrintReport()" class="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition">🖨️ הדפסת רשימה</button>
+                <button onclick="emailFilteredTransactions()" class="px-2.5 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-xl text-xs font-bold transition">📧 שלח תנועות במייל</button>
               </div>
             </div>
 
@@ -489,8 +540,20 @@
       <div id="tabContentBudgets" class="tab-content">
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
-            <h2 class="text-xl font-bold text-slate-900 mb-1">🎯 תקציב חודשי לפי קטגוריה</h2>
-            <p class="text-[11px] text-slate-400 mb-4">הגדירו סכום תקציב מקסימלי לכל קטגוריה, ותקבלו התראה כשחורגים ממנו.</p>
+            <div class="flex justify-between items-start gap-2 mb-1">
+              <div>
+                <h2 class="text-xl font-bold text-slate-900">🎯 תקציב חודשי לפי קטגוריה</h2>
+                <p class="text-[11px] text-slate-400">התקציבים שהגדרתם, עם מעקב חודשי</p>
+              </div>
+              <button onclick="toggleAddBudgetForm()" class="w-9 h-9 shrink-0 flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-xl font-bold transition" title="הוסף תקציב">+</button>
+            </div>
+            <div id="addBudgetForm" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 mt-3 space-y-2">
+              <select id="newBudgetCategorySelect" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-sm bg-white"></select>
+              <div class="flex gap-2">
+                <input type="number" id="newBudgetAmountInput" placeholder="סכום תקציב חודשי" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-sm">
+                <button onclick="saveNewBudget()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap">שמור</button>
+              </div>
+            </div>
             <div id="budgetCategoriesList" class="space-y-3"></div>
           </div>
 
@@ -958,16 +1021,16 @@
       if (limit > 0) {
         if (existing) {
           const { error } = await sb.from('budgets').update({ limit_amount: limit }).eq('id', existing.id);
-          if (error) { console.error(error); alert('שגיאה בשמירת התקציב.'); return; }
+          if (error) { console.error(error); showToast('שגיאה בשמירת התקציב.'); return; }
           existing.limit_amount = limit;
         } else {
           const { data, error } = await sb.from('budgets').insert({ user_id: currentUserId, category, limit_amount: limit }).select().single();
-          if (error) { console.error(error); alert('שגיאה בשמירת התקציב.'); return; }
+          if (error) { console.error(error); showToast('שגיאה בשמירת התקציב.'); return; }
           userBudgetRows.push(data);
         }
       } else if (existing) {
         const { error } = await sb.from('budgets').delete().eq('id', existing.id);
-        if (error) { console.error(error); alert('שגיאה במחיקת התקציב.'); return; }
+        if (error) { console.error(error); showToast('שגיאה במחיקת התקציב.'); return; }
         userBudgetRows = userBudgetRows.filter(r => r.id !== existing.id);
       }
       renderBudgetsTab();
@@ -989,10 +1052,10 @@
       const targetEl = document.getElementById('goalTargetInput');
       const name = nameEl.value.trim();
       const target = parseFloat(targetEl.value);
-      if (!name || !target || target <= 0) { alert('אנא הזינו שם ליעד וסכום יעד תקין'); return; }
+      if (!name || !target || target <= 0) { showToast('אנא הזינו שם ליעד וסכום יעד תקין'); return; }
 
       const { data, error } = await sb.from('goals').insert({ user_id: currentUserId, name, target, current: 0 }).select().single();
-      if (error) { console.error(error); alert('שגיאה בהוספת היעד.'); return; }
+      if (error) { console.error(error); showToast('שגיאה בהוספת היעד.'); return; }
       userGoalRows.push(data);
       nameEl.value = ''; targetEl.value = '';
       renderSavingsGoals();
@@ -1004,14 +1067,14 @@
       if (!g) return;
       const newCurrent = g.current + amt;
       const { error } = await sb.from('goals').update({ current: newCurrent }).eq('id', id);
-      if (error) { console.error(error); alert('שגיאה בעדכון היעד.'); return; }
+      if (error) { console.error(error); showToast('שגיאה בעדכון היעד.'); return; }
       g.current = newCurrent;
       renderSavingsGoals();
     }
     async function deleteSavingsGoal(id) {
       if (!confirm('האם למחוק יעד חיסכון זה?')) return;
       const { error } = await sb.from('goals').delete().eq('id', id);
-      if (error) { console.error(error); alert('שגיאה במחיקת היעד.'); return; }
+      if (error) { console.error(error); showToast('שגיאה במחיקת היעד.'); return; }
       userGoalRows = userGoalRows.filter(g => g.id !== id);
       renderSavingsGoals();
     }
@@ -1032,7 +1095,7 @@
     async function deleteRecurring(id) {
       if (!confirm('למחוק פעולה קבועה זו? (פעולות שכבר נוצרו בעבר לא יימחקו)')) return;
       const { error } = await sb.from('recurring').delete().eq('id', id);
-      if (error) { console.error(error); alert('שגיאה במחיקה.'); return; }
+      if (error) { console.error(error); showToast('שגיאה במחיקה.'); return; }
       userRecurringRows = userRecurringRows.filter(r => r.id !== id);
       renderRecurringList();
     }
@@ -1070,6 +1133,33 @@
       renderRecurringList();
     }
 
+    function toggleAddBudgetForm() {
+      const form = document.getElementById('addBudgetForm');
+      const isHidden = form.classList.contains('hidden');
+      if (isHidden) {
+        const select = document.getElementById('newBudgetCategorySelect');
+        select.innerHTML = customCategories.map(c => `<option value="${escapeHtml(c)}">${c}</option>`).join('');
+        form.classList.remove('hidden');
+      } else {
+        form.classList.add('hidden');
+      }
+    }
+
+    async function saveNewBudget() {
+      const cat = document.getElementById('newBudgetCategorySelect').value;
+      const amt = document.getElementById('newBudgetAmountInput').value;
+      if (!amt || parseFloat(amt) <= 0) { showToast('אנא הזינו סכום תקציב תקין'); return; }
+      await saveCategoryBudget(cat, amt);
+      document.getElementById('newBudgetAmountInput').value = '';
+      document.getElementById('addBudgetForm').classList.add('hidden');
+    }
+
+    function editBudgetAmount(cat, currentLimit) {
+      const newAmount = prompt(`עדכון תקציב חודשי עבור "${cat}":`, currentLimit);
+      if (newAmount === null) return;
+      saveCategoryBudget(cat, newAmount);
+    }
+
     function renderBudgetCategories() {
       const container = document.getElementById('budgetCategoriesList');
       if (!container) return;
@@ -1082,25 +1172,30 @@
           spentByCategory[t.category] = (spentByCategory[t.category] || 0) + (parseFloat(t.amount) || 0);
         }
       });
+      const configuredCats = Object.keys(budgets).filter(c => budgets[c] > 0);
       container.innerHTML = '';
-      customCategories.forEach((cat, idx) => {
-        const limit = budgets[cat] || 0;
+      if (configuredCats.length === 0) {
+        container.innerHTML = '<p class="text-slate-400 text-sm text-center py-4">עדיין לא הגדרתם תקציבים. לחצו על + כדי להוסיף תקציב ראשון.</p>';
+        return;
+      }
+      configuredCats.forEach(cat => {
+        const limit = budgets[cat];
         const spent = spentByCategory[cat] || 0;
-        const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
-        const overBudget = limit > 0 && spent > limit;
+        const pct = Math.min(100, (spent / limit) * 100);
+        const overBudget = spent > limit;
         const barColor = overBudget ? 'bg-rose-500' : (pct > 80 ? 'bg-amber-500' : 'bg-emerald-500');
         const safeCat = cat.replace(/'/g, "\\'");
         container.insertAdjacentHTML('beforeend', `
           <div class="p-3 border ${overBudget ? 'bg-rose-50/60 border-rose-200' : 'border-slate-200'} rounded-xl">
             <div class="flex justify-between items-center mb-2">
               <span class="font-semibold text-sm">${cat}</span>
-              <span class="text-xs ${overBudget ? 'text-rose-600 font-bold' : 'text-slate-500'}">${currentUserCurrency}${spent.toLocaleString()}${limit > 0 ? ' / ' + currentUserCurrency + limit.toLocaleString() : ''} ${overBudget ? '⚠️' : ''}</span>
+              <div class="flex items-center gap-2">
+                <span class="text-xs ${overBudget ? 'text-rose-600 font-bold' : 'text-slate-500'}">${currentUserCurrency}${spent.toLocaleString()} / ${currentUserCurrency}${limit.toLocaleString()} ${overBudget ? '⚠️' : ''}</span>
+                <button onclick="editBudgetAmount('${safeCat}', ${limit})" class="text-slate-300 hover:text-indigo-600 text-xs" title="ערוך תקציב">✏️</button>
+                <button onclick="saveCategoryBudget('${safeCat}', 0)" class="text-slate-300 hover:text-rose-500 text-xs" title="מחק תקציב">🗑️</button>
+              </div>
             </div>
-            ${limit > 0 ? `<div class="w-full bg-slate-100 rounded-full h-2 mb-2"><div class="${barColor} h-2 rounded-full transition-all" style="width:${pct}%"></div></div>` : ''}
-            <div class="flex gap-2">
-              <input type="number" id="budgetInput_${idx}" placeholder="הגדירו תקציב חודשי" value="${limit || ''}" class="w-full px-2 py-1 border border-slate-300 rounded-lg text-xs">
-              <button onclick="saveCategoryBudget('${safeCat}', document.getElementById('budgetInput_${idx}').value)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap">שמור</button>
-            </div>
+            <div class="w-full bg-slate-100 rounded-full h-2"><div class="${barColor} h-2 rounded-full transition-all" style="width:${pct}%"></div></div>
           </div>
         `);
       });
@@ -1339,10 +1434,10 @@
         });
         const data = await response.json();
         if (!response.ok) { throw new Error(data.error || 'שליחת המייל נכשלה'); }
-        alert('המייל נשלח בהצלחה! 📧');
+        showToast('המייל נשלח בהצלחה! 📧');
       } catch (err) {
         console.error(err);
-        alert('שליחת המייל נכשלה: ' + err.message);
+        showToast('שליחת המייל נכשלה: ' + err.message);
       }
     }
 
@@ -1356,14 +1451,47 @@
       return txt;
     }
 
+    function emailFilteredTransactions() {
+      const filtered = sortTransactionsList(getFilteredTransactions());
+      if (filtered.length === 0) { showToast('אין תנועות להצגה עם המסננים הנוכחיים.'); return; }
+
+      let totalIncome = 0, totalExpense = 0;
+      let lines = filtered.map(t => {
+        const isExp = t.actionType && t.actionType.includes('הוצאה');
+        const amt = parseFloat(t.amount) || 0;
+        if (isExp) totalExpense += amt; else totalIncome += amt;
+        const sign = isExp ? '-' : '+';
+        return `${new Date(t.timestamp).toLocaleDateString('he-IL')} | ${t.category || 'כללי'} | ${t.description} | ${sign}${currentUserCurrency}${amt.toLocaleString()}`;
+      });
+
+      const text = `רשימת תנועות (${filtered.length})\nסה"כ הכנסות: ${currentUserCurrency}${totalIncome.toLocaleString()}\nסה"כ הוצאות: ${currentUserCurrency}${totalExpense.toLocaleString()}\n\n${lines.join('\n')}`;
+      sendEmail('FamilyCent - רשימת תנועות', text);
+    }
+
+    /* --- הורדת דוח כקובץ PDF --- */
+    function downloadReportPDF(filename) {
+      const el = document.getElementById('printReportArea');
+      if (!el) return;
+      const opt = {
+        margin: 0.3,
+        filename: filename || 'FamilyCent-Report.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, ignoreElements: (el) => el.classList && el.classList.contains('no-print') },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+      };
+      showToast('מכין את קובץ ה-PDF...');
+      html2pdf().set(opt).from(el).save();
+    }
+    /* --- סוף הורדת PDF --- */
+
     function emailArchivedReport(reportId, useRawLast) {
       let rep;
       if (useRawLast) {
         rep = window.__lastRawReport;
-        if (!rep) { alert('דוח לא נמצא.'); return; }
+        if (!rep) { showToast('דוח לא נמצא.'); return; }
       } else {
         rep = generatedReports.find(r => r.id === reportId);
-        if (!rep) { alert('דוח לא נמצא.'); return; }
+        if (!rep) { showToast('דוח לא נמצא.'); return; }
       }
       sendEmail(`FamilyCent - ${rep.reportName}`, buildReportEmailText(rep));
     }
@@ -1392,7 +1520,7 @@
           lines.push(`🔔 פעולה קבועה קרובה: "${r.description}" (${currentUserCurrency}${r.amount}) בעוד ${daysUntil} ימים`);
         }
       });
-      if (lines.length === 0) { alert('אין כרגע התראות תקציב או תזכורות תשלום קרובות לשליחה.'); return; }
+      if (lines.length === 0) { showToast('אין כרגע התראות תקציב או תזכורות תשלום קרובות לשליחה.'); return; }
       sendEmail('FamilyCent - תזכורות ועדכוני תקציב', lines.join('\n'));
     }
     /* --- סוף שליחת מייל --- */
@@ -1469,7 +1597,7 @@
         if (data.advice) {
           responseEl.innerText = data.advice;
         } else {
-          responseEl.innerText = 'לא הצלחנו לקבל תשובה מהיועץ. נסו שוב.';
+          responseEl.innerText = 'שגיאה: ' + (data.error || 'לא הצלחנו לקבל תשובה מהיועץ (סטטוס ' + response.status + ')');
         }
       } catch (err) {
         console.error(err);
@@ -1483,7 +1611,7 @@
 
     async function aiSuggestCategory(btnEl) {
       const desc = document.getElementById('descriptionInput').value.trim();
-      if (!desc) { alert('כתבו קודם תיאור לפעולה, ואז לחצו על הצעת הקטגוריה'); return; }
+      if (!desc) { showToast('כתבו קודם תיאור לפעולה, ואז לחצו על הצעת הקטגוריה'); return; }
 
       const original = btnEl.innerText;
       btnEl.innerText = '⏳';
@@ -1496,16 +1624,20 @@
           body: JSON.stringify({ mode: 'suggest_category', description: desc, categories: customCategories })
         });
         const data = await response.json();
+        if (data.error) {
+          showToast('שגיאת AI: ' + data.error);
+          return;
+        }
         const suggestion = data.suggestion || '';
         const match = customCategories.find(c => c === suggestion || suggestion.includes(c) || c.includes(suggestion));
         if (match) {
           document.getElementById('categoryInput').value = match;
         } else {
-          alert('ה-AI לא הצליח להציע קטגוריה תואמת מהרשימה הקיימת. אפשר לנסח את התיאור אחרת ולנסות שוב.');
+          showToast('ה-AI לא הצליח להציע קטגוריה תואמת מהרשימה הקיימת. אפשר לנסח את התיאור אחרת ולנסות שוב.');
         }
       } catch (err) {
         console.error(err);
-        alert('קריאה ל-AI נכשלה. נסו שוב.');
+        showToast('קריאה ל-AI נכשלה. נסו שוב.');
       } finally {
         btnEl.innerText = original;
         btnEl.disabled = false;
@@ -1559,13 +1691,13 @@
         if (data.amount) document.getElementById('amountInput').value = data.amount;
         if (data.description) document.getElementById('descriptionInput').value = data.description;
         if (!data.amount && !data.description) {
-          alert('לא הצלחנו לזהות פרטים בקובץ. נסו קובץ ברור יותר או מלאו ידנית.');
+          showToast('לא הצלחנו לזהות פרטים בקובץ. נסו קובץ ברור יותר או מלאו ידנית.');
         } else {
-          alert('הפרטים מולאו אוטומטית מהחשבונית - בדקו ואשרו לפני השמירה.');
+          showToast('הפרטים מולאו אוטומטית מהחשבונית - בדקו ואשרו לפני השמירה.');
         }
       } catch (err) {
         console.error(err);
-        alert('סריקת החשבונית נכשלה. נסו שוב.');
+        showToast('סריקת החשבונית נכשלה. נסו שוב.');
       } finally {
         btn.innerText = original;
         btn.disabled = false;
@@ -1661,7 +1793,7 @@
           }
         } catch (err) {
           console.error(err);
-          alert('שגיאה בקריאת הקובץ. ודאו שזהו קובץ Excel/CSV תקין.');
+          showToast('שגיאה בקריאת הקובץ. ודאו שזהו קובץ Excel/CSV תקין.');
         }
       };
       reader.readAsArrayBuffer(file);
@@ -1672,9 +1804,9 @@
       if (!confirm(`לייבא ${pendingImportRows.length} תנועות לתקציב שלכם?`)) return;
 
       const { error } = await sb.from('transactions').insert(pendingImportRows);
-      if (error) { console.error(error); alert('שגיאה בייבוא התנועות. נסו שוב.'); return; }
+      if (error) { console.error(error); showToast('שגיאה בייבוא התנועות. נסו שוב.'); return; }
 
-      alert(`יובאו בהצלחה ${pendingImportRows.length} תנועות! מומלץ לעבור עליהן ולעדכן קטגוריות מדויקות.`);
+      showToast(`יובאו בהצלחה ${pendingImportRows.length} תנועות! מומלץ לעבור עליהן ולעדכן קטגוריות מדויקות.`);
       closeImportExcelModal();
       await loadTransactionsLocal();
     }
@@ -1727,10 +1859,10 @@
           Object.keys(data).forEach(k => { if (k.startsWith('fc_') && !excluded.includes(k)) localStorage.setItem(k, data[k]); });
           closeBackupModal();
           initDarkMode();
-          alert('ההגדרות המקומיות שוחזרו בהצלחה!');
+          showToast('ההגדרות המקומיות שוחזרו בהצלחה!');
         } catch (err) {
           console.error(err);
-          alert('קובץ הגיבוי אינו תקין. ודאו שמדובר בקובץ JSON שיוצא מהאפליקציה.');
+          showToast('קובץ הגיבוי אינו תקין. ודאו שמדובר בקובץ JSON שיוצא מהאפליקציה.');
         }
       };
       reader.readAsText(file);
@@ -2060,7 +2192,7 @@
     function switchTab(tabName) {
       if (tabName === 'admin') {
         if (!checkIsAdmin(currentUserEmail) && anyAdminExists()) {
-          alert("שגיאת אבטחה: אין לך הרשאות לגשת לפאנל הניהול.");
+          showToast("שגיאת אבטחה: אין לך הרשאות לגשת לפאנל הניהול.");
           switchTab('main');
           return;
         }
@@ -2134,11 +2266,11 @@
     async function addNewCategory() {
       const input = document.getElementById('newCategoryInput');
       const val = input.value.trim();
-      if (!val) { alert('אנא הזן שם לקטגוריה'); return; }
-      if (customCategories.includes(val)) { alert('קטגוריה זו כבר קיימת'); return; }
+      if (!val) { showToast('אנא הזן שם לקטגוריה'); return; }
+      if (customCategories.includes(val)) { showToast('קטגוריה זו כבר קיימת'); return; }
 
       const { data, error } = await sb.from('categories').insert({ user_id: currentUserId, name: val }).select().single();
-      if (error) { console.error(error); alert('שגיאה בהוספת הקטגוריה. נסו שוב.'); return; }
+      if (error) { console.error(error); showToast('שגיאה בהוספת הקטגוריה. נסו שוב.'); return; }
 
       userCategoryRows.push(data);
       customCategories.push(val);
@@ -2153,13 +2285,13 @@
       const select = document.getElementById('categoryInput');
       const val = select.value;
       if (!val) return;
-      if (customCategories.length <= 1) { alert('חייבת להישאר לפחות קטגוריה אחת במערכת.'); return; }
+      if (customCategories.length <= 1) { showToast('חייבת להישאר לפחות קטגוריה אחת במערכת.'); return; }
       if (!confirm(`האם למחוק את הקטגוריה "${val}"? (הפעולות הקיימות לא יימחקו)`)) return;
 
       const row = userCategoryRows.find(r => r.name === val);
       if (row) {
         const { error } = await sb.from('categories').delete().eq('id', row.id);
-        if (error) { console.error(error); alert('שגיאה במחיקת הקטגוריה. נסו שוב.'); return; }
+        if (error) { console.error(error); showToast('שגיאה במחיקת הקטגוריה. נסו שוב.'); return; }
         userCategoryRows = userCategoryRows.filter(r => r.id !== row.id);
       }
       customCategories = customCategories.filter(c => c !== val);
@@ -2174,9 +2306,9 @@
       const normalizedEmail = email.trim().toLowerCase();
       const { error } = await sb.auth.resetPasswordForEmail(normalizedEmail);
       if (error) {
-        alert('אירעה שגיאה בשליחת מייל האיפוס: ' + error.message);
+        showToast('אירעה שגיאה בשליחת מייל האיפוס: ' + error.message);
       } else {
-        alert('אם קיים חשבון עם כתובת המייל הזו, נשלח אליו מייל עם קישור לאיפוס הסיסמה.');
+        showToast('אם קיים חשבון עם כתובת המייל הזו, נשלח אליו מייל עם קישור לאיפוס הסיסמה.');
       }
     }
 
@@ -2273,7 +2405,7 @@
       const placeholder = document.getElementById('loginAlertPlaceholder');
       placeholder.innerHTML = '';
 
-      if (!email || !password) { alert('אנא הזינו מייל וסיסמה'); return; }
+      if (!email || !password) { showToast('אנא הזינו מייל וסיסמה'); return; }
 
       const { data, error } = await sb.auth.signInWithPassword({ email, password });
 
@@ -2296,11 +2428,11 @@
       const currencyRadio = document.querySelector('input[name="currency"]:checked');
       const selectedCurrency = currencyRadio ? currencyRadio.value : '₪';
 
-      if (!email || !password) { alert('אנא מלאו אימייל וסיסמה בשלב הראשון'); return; }
+      if (!email || !password) { showToast('אנא מלאו אימייל וסיסמה בשלב הראשון'); return; }
 
       const { data, error } = await sb.auth.signUp({ email, password });
-      if (error) { alert('שגיאה בהרשמה: ' + error.message); return; }
-      if (!data.user) { alert('אירעה שגיאה בהרשמה, נסו שוב.'); return; }
+      if (error) { showToast('שגיאה בהרשמה: ' + error.message); return; }
+      if (!data.user) { showToast('אירעה שגיאה בהרשמה, נסו שוב.'); return; }
 
       await sb.from('profiles').update({ family_name: familyName, phone, currency: selectedCurrency }).eq('id', data.user.id);
 
@@ -2311,7 +2443,7 @@
       toggleToLogin();
 
       if (!data.session) {
-        alert('החשבון נוצר בהצלחה! נשלח אליכם מייל לאימות הכתובת - אשרו אותו ואז תוכלו להתחבר.');
+        showToast('החשבון נוצר בהצלחה! נשלח אליכם מייל לאימות הכתובת - אשרו אותו ואז תוכלו להתחבר.');
         return;
       }
 
@@ -2545,10 +2677,10 @@
       const password = document.getElementById('adminEditUserPassword').value;
       const isAdmin = document.getElementById('adminEditUserIsAdmin').checked;
 
-      if (!password) { alert('חובה להגדיר סיסמה למשתמש'); return; }
+      if (!password) { showToast('חובה להגדיר סיסמה למשתמש'); return; }
 
       if (editingUserEmailByAdmin === currentUserEmail && !isAdmin) {
-        alert('אינך יכול לבטל לעצמך את הרשאות המנהל.');
+        showToast('אינך יכול לבטל לעצמך את הרשאות המנהל.');
         return;
       }
 
@@ -2558,7 +2690,7 @@
       users[editingUserEmailByAdmin].isAdmin = isAdmin;
 
       saveStoredUsers(users);
-      alert(`פרטי המשתמש ${editingUserEmailByAdmin} עודכנו בהצלחה!`);
+      showToast(`פרטי המשתמש ${editingUserEmailByAdmin} עודכנו בהצלחה!`);
       closeAdminEditUserModal();
       renderAdminUsersTable();
     }
@@ -2566,17 +2698,17 @@
     function addAdminPrivilege() {
       const emailInput = document.getElementById('adminNewEmailInput');
       const email = emailInput.value.trim().toLowerCase();
-      if (!email) { alert('אנא הזן כתובת אימייל'); return; }
+      if (!email) { showToast('אנא הזן כתובת אימייל'); return; }
       
       let users = getStoredUsers();
       if (!users[email]) {
-        alert('לא נמצא משתמש רשום עם כתובת אימייל זו במערכת.');
+        showToast('לא נמצא משתמש רשום עם כתובת אימייל זו במערכת.');
         return;
       }
       
       users[email].isAdmin = true;
       saveStoredUsers(users);
-      alert(`המשתמש ${email} מונה בהצלחה כמנהל מערכת נוסף.`);
+      showToast(`המשתמש ${email} מונה בהצלחה כמנהל מערכת נוסף.`);
       emailInput.value = '';
       renderAdminUsersTable();
     }
@@ -2616,7 +2748,7 @@
     function viewArchivedReportFromAdmin(reportId, userEmail) {
       const allReports = getStoredReports();
       const rep = allReports.find(r => r.id === reportId && r.email === userEmail);
-      if (!rep) { alert('דוח לא נמצא.'); return; }
+      if (!rep) { showToast('דוח לא נמצא.'); return; }
       
       generatedReports.push(rep); 
       viewArchivedReport(reportId);
@@ -2630,19 +2762,19 @@
       const category = document.getElementById('categoryInput').value;
       const notes = document.getElementById('notesInput').value.trim();
 
-      if (!amount || !description) { alert('בבקשה מלאו סכום ותיאור לפעולה'); return; }
+      if (!amount || !description) { showToast('בבקשה מלאו סכום ותיאור לפעולה'); return; }
 
       if (editingTransactionId) {
         const { error } = await sb.from('transactions')
           .update({ action_type: actionType, amount, description, category, notes })
           .eq('id', editingTransactionId);
-        if (error) { console.error(error); alert('שגיאה בעדכון הפעולה. נסו שוב.'); return; }
-        alert('הפעולה עודכנה בהצלחה');
+        if (error) { console.error(error); showToast('שגיאה בעדכון הפעולה. נסו שוב.'); return; }
+        showToast('הפעולה עודכנה בהצלחה');
       } else {
         const { error } = await sb.from('transactions').insert({
           user_id: currentUserId, action_type: actionType, amount, description, category, notes
         });
-        if (error) { console.error(error); alert('שגיאה בשמירת הפעולה. נסו שוב.'); return; }
+        if (error) { console.error(error); showToast('שגיאה בשמירת הפעולה. נסו שוב.'); return; }
 
         const isRecurringEl = document.getElementById('isRecurringInput');
         if (isRecurringEl && isRecurringEl.checked) {
@@ -2688,7 +2820,7 @@
     async function deleteTransaction(id) {
       if (!confirm("האם למחוק פעולה זו לצמיתות?")) return;
       const { error } = await sb.from('transactions').delete().eq('id', id);
-      if (error) { console.error(error); alert('שגיאה במחיקת הפעולה. נסו שוב.'); return; }
+      if (error) { console.error(error); showToast('שגיאה במחיקת הפעולה. נסו שוב.'); return; }
       localTransactions = localTransactions.filter(t => t.id !== id);
       updateUI();
     }
@@ -2755,23 +2887,23 @@
       const { error: profileError } = await sb.from('profiles')
         .update({ family_name: familyName, phone })
         .eq('id', currentUserId);
-      if (profileError) { console.error(profileError); alert('שגיאה בעדכון הפרטים. נסו שוב.'); return; }
+      if (profileError) { console.error(profileError); showToast('שגיאה בעדכון הפרטים. נסו שוב.'); return; }
 
       if (password) {
         const { error: pwError } = await sb.auth.updateUser({ password });
-        if (pwError) { alert('הפרטים עודכנו, אבל עדכון הסיסמה נכשל: ' + pwError.message); }
+        if (pwError) { showToast('הפרטים עודכנו, אבל עדכון הסיסמה נכשל: ' + pwError.message); }
       }
 
       currentUserRawData = { ...currentUserRawData, family_name: familyName, phone };
       document.getElementById('navFamilyName').innerText = familyName;
       document.getElementById('profilePassword').value = '';
-      alert('הפרטים עודכנו בהצלחה!');
+      showToast('הפרטים עודכנו בהצלחה!');
       closeProfileModal();
     }
 
     function exportToCSV() {
       const filtered = getFilteredTransactions();
-      if (filtered.length === 0) { alert('אין נתונים לייצוא'); return; }
+      if (filtered.length === 0) { showToast('אין נתונים לייצוא'); return; }
       let csvContent = "\uFEFFתאריך,סוג פעולה,תיאור,קטגוריה,סכום\n";
       filtered.forEach(t => {
         csvContent += `${new Date(t.timestamp).toLocaleDateString('he-IL')},${t.actionType},${t.description.replace(/,/g, ' ')},${t.category},${t.amount}\n`;
@@ -2787,7 +2919,7 @@
 
     function generatePrintReport() {
       const filtered = getFilteredTransactions();
-      if (filtered.length === 0) { alert('אין נתונים להדפסה.'); return; }
+      if (filtered.length === 0) { showToast('אין נתונים להדפסה.'); return; }
       let rows = '';
       filtered.forEach(t => {
         const isExp = t.actionType.includes('הוצאה');
@@ -2817,7 +2949,7 @@
     }
 
     function generatePeriodicReport(type) {
-      if (localTransactions.length === 0) { alert('אין נתונים זמינים.'); return; }
+      if (localTransactions.length === 0) { showToast('אין נתונים זמינים.'); return; }
       const now = new Date();
       let title = type === 'month' ? `דוח חודשי שוטף` : `דוח שנתי שוטף`;
       let tFiltered = localTransactions.filter(t => {
@@ -2893,7 +3025,7 @@
     function submitManualReport() {
       const yearVal = parseInt(document.getElementById('manualYearInput').value);
       if (!yearVal || isNaN(yearVal)) {
-        alert('אנא הזינו שנה תקינה');
+        showToast('אנא הזינו שנה תקינה');
         return;
       }
       
@@ -2947,12 +3079,12 @@
         total_income: totalIncome, total_expense: totalExpense, neto: totalIncome - totalExpense,
         breakdown, transactions_snapshot: periodTxs
       });
-      if (error) { console.error(error); if (isManual) alert('שגיאה בהפקת הדוח.'); return; }
+      if (error) { console.error(error); if (isManual) showToast('שגיאה בהפקת הדוח.'); return; }
 
       await loadUserReports();
 
       if (isManual) {
-        alert(`הדוח "${reportName}" הופק בהצלחה ונשמר בארכיון.`);
+        showToast(`הדוח "${reportName}" הופק בהצלחה ונשמר בארכיון.`);
         renderArchivedReportsTable();
       }
     }
@@ -3005,7 +3137,7 @@
 
     function viewArchivedReport(reportId) {
       const rep = generatedReports.find(r => r.id === reportId);
-      if (!rep) { alert('דוח לא נמצא.'); return; }
+      if (!rep) { showToast('דוח לא נמצא.'); return; }
 
       let rowsHtml = '';
       (rep.transactionsSnapshot || []).forEach(t => {
@@ -3036,6 +3168,7 @@
       reportArea.innerHTML = `
         <div class="w-full text-right" dir="rtl" style="font-family: 'Assistant', sans-serif;">
           <div class="no-print mb-6 flex justify-end gap-2">
+            <button onclick="downloadReportPDF('${rep.reportName.replace(/[^\w\s-]/g, '')}.pdf')" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition">⬇️ הורד PDF</button>
             <button onclick="emailArchivedReport('${rep.id}')" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח דוח זה במייל</button>
             <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור וחזור למערכת</button>
           </div>
@@ -3095,7 +3228,7 @@
     async function deleteArchivedReport(reportId) {
       if (!confirm("האם למחוק דוח מאורכב זה מהרשימה? (פעולה זו לא תמחק את התנועות עצמן בלוח הראשי)")) return;
       const { error } = await sb.from('reports').delete().eq('id', reportId);
-      if (error) { console.error(error); alert('שגיאה במחיקת הדוח.'); return; }
+      if (error) { console.error(error); showToast('שגיאה במחיקת הדוח.'); return; }
       generatedReports = generatedReports.filter(r => r.id !== reportId);
       renderArchivedReportsTable();
     }
@@ -3117,6 +3250,7 @@
       reportArea.innerHTML = `
         <div class="w-full text-right" dir="rtl" style="font-family: 'Assistant', sans-serif;">
           <div class="no-print mb-6 flex justify-end gap-2">
+            <button onclick="downloadReportPDF('${title.replace(/[^\w\s-]/g, '')}.pdf')" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition">⬇️ הורד PDF</button>
             <button onclick="emailArchivedReport(null, true)" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח דוח זה במייל</button>
             <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור וחזור למערכת</button>
           </div>
