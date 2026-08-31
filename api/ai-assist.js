@@ -32,6 +32,10 @@ module.exports = async function handler(req, res) {
       });
       const data = await response.json();
       const suggestion = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ? data.choices[0].message.content.trim() : '';
+      if (!suggestion && data.error) {
+        console.error('OpenAI suggest_category error:', data.error);
+        return res.status(500).json({ error: data.error.message || 'שגיאה מ-OpenAI' });
+      }
       return res.status(200).json({ suggestion });
     }
 
@@ -61,7 +65,11 @@ module.exports = async function handler(req, res) {
       });
       const data = await response.json();
       const advice = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ? data.choices[0].message.content.trim() : '';
-      if (!advice) return res.status(500).json({ error: 'לא התקבלה תשובה מה-AI' });
+      if (!advice) {
+        const detail = (data.error && data.error.message) ? data.error.message : JSON.stringify(data).slice(0, 300);
+        console.error('OpenAI advisor error:', detail);
+        return res.status(500).json({ error: 'לא התקבלה תשובה מה-AI: ' + detail });
+      }
       return res.status(200).json({ advice });
     }
 
