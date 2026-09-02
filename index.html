@@ -61,21 +61,89 @@
     html.dark .shadow-md, html.dark .shadow-lg, html.dark .shadow-xl { box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important; }
     /* --- סוף מצב כהה --- */
 
-    /* --- רקע אנימטיבי למסך ההתחברות --- */
-    #authPage { position: relative; overflow: hidden; }
-    #authPage .auth-blob {
-      position: absolute; border-radius: 50%; filter: blur(60px); opacity: 0.35; z-index: 0;
-      animation: blob-float 14s ease-in-out infinite;
-    }
-    #authPage .auth-blob-1 { width: 380px; height: 380px; background: #6366f1; top: -100px; right: -80px; animation-delay: 0s; }
-    #authPage .auth-blob-2 { width: 320px; height: 320px; background: #10b981; bottom: -100px; left: -60px; animation-delay: 3s; }
-    #authPage .auth-blob-3 { width: 260px; height: 260px; background: #f59e0b; top: 40%; left: 50%; animation-delay: 6s; }
-    @keyframes blob-float {
-      0%, 100% { transform: translate(0, 0) scale(1); }
-      33% { transform: translate(30px, -30px) scale(1.1); }
-      66% { transform: translate(-20px, 20px) scale(0.95); }
-    }
-    #authPage > *:not(.auth-blob) { position: relative; z-index: 1; }
+    /* --- מסך כניסה חדש: פאנל ויזואלי מפוצל (showcase) --- */
+    @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&display=swap');
+    .fc-split { min-height: 100vh; width: 100%; display: grid; grid-template-columns: 1.45fr .72fr; background: linear-gradient(110deg,#2563eb 0%,#3b82f6 55%,#ffffff 55%); font-family: 'Assistant', Arial, sans-serif; }
+    .fc-showcase { position: relative; color: #172033; padding: 42px 5vw 35px; overflow: visible; display: flex; flex-direction: column; justify-content: space-between; }
+    .fc-bg-shapes { position: absolute; inset: 0; overflow: hidden; z-index: 0; pointer-events: none; }
+    .fc-bg-shapes:before { content:""; position:absolute; width:760px; height:760px; border-radius:50%; right:-340px; top:-360px; background: radial-gradient(circle at 42% 42%,#dbeafe 0%,#eaf2ff 25%,rgba(191,219,254,.82) 48%,rgba(219,234,254,.38) 67%,transparent 78%); filter: blur(1px); opacity: .98; }
+    .fc-bg-shapes:after { content:""; position:absolute; width:560px; height:560px; border-radius:50%; left:-300px; bottom:-350px; background: radial-gradient(circle,#bfdbfe 0,rgba(147,197,253,.58) 45%,rgba(191,219,254,.24) 62%,transparent 74%); opacity: .98; }
+    .fc-blueArc { position:absolute; z-index:1; right:-250px; top:95px; width:430px; height:620px; border:95px solid rgba(37,99,235,.88); border-left-color:transparent; border-bottom-color:transparent; border-radius:50%; transform: rotate(14deg); filter: drop-shadow(0 16px 35px rgba(37,99,235,.18)); pointer-events:none; animation: fcArcFloat 8s ease-in-out infinite; }
+    @keyframes fcArcFloat { 0%,100% { transform: rotate(14deg) translateY(0);} 50% { transform: rotate(11deg) translateY(7px);} }
+    .fc-content { position: relative; z-index: 3; max-width: 790px; margin: auto; width: 100%; }
+    .fc-logo { display:flex; align-items:center; gap:10px; font-weight:800; font-size:29px; transition: transform .3s ease, filter .3s ease; }
+    .fc-logo:hover { transform: translateY(-2px) scale(1.01); filter: drop-shadow(0 8px 18px rgba(37,99,235,.16)); }
+    .fc-logoIcon { width:43px; height:43px; border-radius:13px; display:grid; place-items:center; background: linear-gradient(135deg,#3b82f6,#7c3aed); font-size:23px; box-shadow: 0 8px 25px #0005; animation: fcLogoBreathe 3.8s ease-in-out infinite, fcLogoShine 5s ease-in-out infinite; }
+    @keyframes fcLogoBreathe { 0%,100% { transform: translateY(0) rotate(0) scale(1);} 50% { transform: translateY(-4px) rotate(2deg) scale(1.05);} }
+    @keyframes fcLogoShine { 0%,70%,100% { filter: drop-shadow(0 0 0 rgba(37,99,235,0)); } 80% { filter: drop-shadow(0 0 13px rgba(59,130,246,.42)); } }
+    .fc-tag { display:inline-flex; margin-top:65px; padding:7px 13px; border:1px solid #cbd5e1; border-radius:99px; background:#ffffffaa; color:#4f5f83; font-size:13px; animation: fcBadgePop .8s .1s ease-out both; }
+    @keyframes fcBadgePop { from { opacity:0; transform: translateY(12px) scale(.96);} to { opacity:1; transform: translateY(0) scale(1);} }
+    .fc-h1 { font-size: clamp(42px,5vw,72px); line-height:1.02; margin:14px 0; font-weight:800; max-width:700px; animation: fcFadeUp .9s .18s ease-out both; }
+    .fc-h1 span { background: linear-gradient(90deg,#fff,#7dd3fc,#a78bfa); color:transparent; background-clip:text; -webkit-background-clip:text; animation: fcTextShimmer 5s ease-in-out infinite; }
+    @keyframes fcTextShimmer { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.12); } }
+    .fc-lead { font-size:21px; line-height:1.6; color:#5f6c84; max-width:610px; margin:0; animation: fcFadeUp .9s .28s ease-out both; }
+    @keyframes fcFadeUp { from { opacity:0; transform: translateY(18px);} to { opacity:1; transform: translateY(0);} }
+    .fc-features { display:flex; flex-direction:column; align-items:flex-start; gap:12px; margin-top:28px; }
+    .fc-feature { display:flex; align-items:center; gap:13px; color:#374151; font-size:15px; transition: transform .28s ease, opacity .28s ease; animation: fcFeatureIn .65s ease-out both; }
+    .fc-feature:hover { transform: translateX(5px); }
+    .fc-feature:nth-child(2) { animation-delay:.08s; } .fc-feature:nth-child(3) { animation-delay:.16s; } .fc-feature:nth-child(4) { animation-delay:.24s; }
+    @keyframes fcFeatureIn { from { opacity:0; transform: translateX(20px);} to { opacity:1; transform: translateX(0);} }
+    .fc-feature i { width:36px; height:36px; border-radius:11px; background:#ffffffaa; border:1px solid #dbe3f0; display:grid; place-items:center; font-style:normal; transition:.25s; animation: fcIconBreathe 3.2s ease-in-out infinite; }
+    .fc-feature:hover i { transform: scale(1.08) rotate(-4deg); box-shadow: 0 8px 18px rgba(79,70,229,.12); }
+    @keyframes fcIconBreathe { 0%,100% { transform: translateY(0) rotate(0);} 50% { transform: translateY(-3px) rotate(-3deg);} }
+    .fc-devices { position:relative; height:375px; margin-top:25px; }
+    .fc-laptop { position:absolute; width:min(640px,78vw); height:325px; left:8%; bottom:0; background:#111827; border:7px solid #263248; border-radius:18px 18px 10px 10px; box-shadow: 0 24px 50px rgba(71,85,105,.22); animation: fcLaptopIn 1s .2s ease-out both, fcLaptopFloat 7s 1.2s ease-in-out infinite; }
+    .fc-laptop:after { content:""; position:absolute; left:-70px; right:-70px; bottom:-24px; height:19px; border-radius:0 0 22px 22px; background:#283449; box-shadow: 0 9px 12px #0006; }
+    @keyframes fcLaptopIn { from { opacity:0; transform: perspective(900px) rotateY(10deg) rotateX(5deg) translateY(30px) scale(.97);} to { opacity:1; transform: perspective(900px) rotateY(5deg) rotateX(2deg) translateY(0) scale(1);} }
+    @keyframes fcLaptopFloat { 0%,100% { transform: perspective(900px) rotateY(5deg) rotateX(2deg) translateY(0);} 50% { transform: perspective(900px) rotateY(4deg) rotateX(2deg) translateY(-7px);} }
+    .fc-screen { height:100%; background:#f8fafc; border-radius:10px; overflow:hidden; color:#172033; animation: fcScreenGlow 5s ease-in-out infinite; }
+    @keyframes fcScreenGlow { 0%,100% { box-shadow: inset 0 0 0 rgba(99,102,241,0); } 50% { box-shadow: inset 0 0 35px rgba(99,102,241,.05); } }
+    .fc-top { height:28px; background:white; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; padding:0 9px; gap:4px; }
+    .fc-top b { margin-right:auto; font-size:8px; } .fc-circle { width:6px; height:6px; border-radius:50%; background:#cbd5e1; }
+    .fc-app { display:grid; grid-template-columns:105px 1fr; height:calc(100% - 28px); }
+    .fc-sidebar { background:#0f172a; color:#94a3b8; padding:11px 8px; } .fc-mini { font-weight:800; color:white; font-size:12px; margin-bottom:16px; } .fc-nav { font-size:8px; padding:8px; border-radius:6px; margin:3px 0; } .fc-nav.on { background:#4f46e5; color:white; }
+    .fc-dash { padding:12px; } .fc-dash h3 { margin:0 0 9px; font-size:13px; animation: fcDashTitleIn .8s .7s ease-out both; }
+    @keyframes fcDashTitleIn { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: translateY(0); } }
+    .fc-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; } .fc-stat { background:white; border:1px solid #e5e7eb; border-radius:8px; padding:8px; animation: fcStatRise .7s ease-out both; } .fc-stat:nth-child(2) { animation-delay:.08s; } .fc-stat:nth-child(3) { animation-delay:.16s; }
+    @keyframes fcStatRise { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: translateY(0); } }
+    .fc-stat small { display:block; font-size:7px; color:#94a3b8; } .fc-stat strong { font-size:12px; } .fc-green { color:#059669; } .fc-red { color:#e11d48; } .fc-purple { color:#4f46e5; }
+    .fc-charts { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:8px; } .fc-chart { background:white; border:1px solid #e5e7eb; border-radius:8px; padding:8px; height:115px; animation: fcChartRise .8s .25s ease-out both; } .fc-charts .fc-chart:nth-child(2) { animation-delay:.4s; }
+    @keyframes fcChartRise { from { opacity:0; transform: translateY(14px) scale(.98); } to { opacity:1; transform: translateY(0) scale(1); } }
+    .fc-chart h4 { font-size:8px; margin:0 0 6px; } .fc-bars { height:76px; display:flex; align-items:end; gap:6px; }
+    .fc-bar { flex:1; background: linear-gradient(#818cf8,#4f46e5); border-radius:4px 4px 1px 1px; transform-origin:bottom; animation: fcBarGrow .8s ease-out both; }
+    .fc-bar:nth-child(2) { animation-delay:.08s; } .fc-bar:nth-child(3) { animation-delay:.16s; } .fc-bar:nth-child(4) { animation-delay:.24s; } .fc-bar:nth-child(5) { animation-delay:.32s; }
+    @keyframes fcBarGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+    .fc-dots { display:flex; justify-content:center; gap:6px; margin-top:10px; } .fc-dots span { width:7px; height:7px; border-radius:50%; background:#c7d2fe; transition: all .35s ease; } .fc-dots span.active { width:20px; border-radius:99px; background:#6366f1; }
+
+    .fc-feature-preview { position:relative; cursor:pointer; display:inline-flex; align-items:center; width:max-content; min-width:0; z-index:1; }
+    .fc-feature-preview:hover { z-index:50; }
+    .fc-feature-preview > span { display:block; position:relative; z-index:2; white-space:nowrap; }
+    .fc-hover-shot { position:absolute; right:calc(100% + 15px); left:auto; top:50%; transform: translateY(-50%) scale(.95); width:315px; min-height:165px; padding:14px; border-radius:18px; background: rgba(255,255,255,.98); color:#172033; border:1px solid #dbe4f3; box-shadow: 0 22px 50px rgba(30,64,175,.20); opacity:0; visibility:hidden; transition: opacity .22s ease, transform .24s ease, visibility .22s ease; z-index:100; pointer-events:none; direction:rtl; }
+    .fc-hover-shot:after { content:""; position:absolute; right:-5px; left:auto; top:50%; width:10px; height:10px; background:#fff; border-top:1px solid #dbe4f3; border-right:1px solid #dbe4f3; transform: translateY(-50%) rotate(45deg); }
+    .fc-feature-preview:hover .fc-hover-shot { opacity:1; visibility:visible; transform: translateY(-50%) scale(1); }
+    .fc-shot-title { font-weight:800; font-size:14px; margin-bottom:10px; }
+    .fc-shot-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; } .fc-shot-stats b { font-size:10px; background:#f5f7ff; border-radius:9px; padding:8px; text-align:center; }
+    .fc-bars-mini { height:72px; display:flex; align-items:end; gap:7px; padding:3px 10px; margin-top:8px; background:#f8faff; border-radius:10px; } .fc-bars-mini span { flex:1; border-radius:5px 5px 2px 2px; background: linear-gradient(#818cf8,#4f46e5); }
+    .fc-goal { background:#f8fafc; border:1px solid #e7ebf3; border-radius:10px; padding:8px; margin:7px 0; } .fc-goal-row { display:flex; justify-content:space-between; font-size:10px; } .fc-goal-row small { color:#4f46e5; font-weight:800; }
+    .fc-goal-line { height:7px; background:#e7eaf2; border-radius:99px; margin-top:6px; overflow:hidden; } .fc-goal-line span { display:block; height:100%; border-radius:99px; background: linear-gradient(90deg,#3b82f6,#6366f1); }
+    .fc-line-preview { width:100%; height:75px; background:#f8faff; border-radius:10px; }
+    .fc-report-pills { display:flex; gap:5px; margin-top:7px; } .fc-report-pills span { font-size:8px; background:#eef2ff; color:#4338ca; border-radius:99px; padding:5px 7px; }
+    .fc-security-card { background:#f8fafc; border:1px solid #e6ebf2; border-radius:10px; padding:11px; display:flex; flex-direction:column; gap:4px; } .fc-security-card strong { font-size:12px; } .fc-security-card small { font-size:9px; color:#7a8498; }
+    .fc-secure-badge { width:max-content; margin-top:6px; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; border-radius:99px; padding:5px 9px; font-size:9px; font-weight:800; }
+
+    .fc-loginArea { background:#fff; display:flex; align-items:center; justify-content:center; padding:35px; }
+    .fc-card { width:min(430px,100%); padding:15px; animation: fcCardIn .9s .12s ease-out both; }
+    @keyframes fcCardIn { from { opacity:0; transform: translateX(-22px) scale(.98); } to { opacity:1; transform: translateX(0) scale(1); } }
+    .fc-tabs { display:grid; grid-template-columns:1fr 1fr; margin:24px 0 20px; border-bottom:1px solid #e5e7eb; }
+    .fc-tab { border:0; background:none; padding:13px; font:700 14px Assistant,Arial,sans-serif; color:#98a1b2; cursor:pointer; border-bottom:2px solid transparent; }
+    .fc-tab.active { color:#1e3a8a; border-bottom-color:#4f46e5; }
+
+    @media (max-width:950px) { .fc-split { grid-template-columns:1fr; background:#071338; } .fc-showcase { min-height:600px; } .fc-loginArea { border-radius:28px 28px 0 0; } .fc-laptop { left:2%; width:500px; } }
+    @media (max-width:620px) { .fc-showcase { padding:25px 20px 20px; } .fc-tag { margin-top:35px; } .fc-lead { font-size:16px; } .fc-features { display:none; } .fc-devices { height:240px; } .fc-laptop { width:380px; height:210px; left:-10px; } .fc-loginArea { padding:28px 18px; } }
+    @media (max-width:1100px) { .fc-hover-shot { left:calc(100% + 15px); right:auto; } .fc-hover-shot:after { left:-5px; right:auto; border-bottom:1px solid #dbe4f3; border-left:1px solid #dbe4f3; border-top:none; border-right:none; } }
+    @media (max-width:700px) { .fc-hover-shot { position:fixed; left:50%; right:auto; top:auto; bottom:18px; transform: translate(-50%,5px) scale(.97); width:min(300px,calc(100vw - 40px)); } .fc-feature-preview:hover .fc-hover-shot { transform: translate(-50%,0) scale(1); } .fc-hover-shot:after { display:none; } }
+    @media (prefers-reduced-motion: reduce) { .fc-split *, .fc-split *::before, .fc-split *::after { animation:none !important; transition:none !important; } }
+    /* --- סוף מסך כניסה חדש --- */
   </style>
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800">
@@ -168,117 +236,177 @@
   </script>
 
   <!-- עמוד 1: מסך כניסה והרשמה -->
-  <div id="authPage" class="page active w-full min-h-screen flex flex-col justify-center items-center py-12 px-4 bg-gradient-to-br from-indigo-50 via-slate-50 to-emerald-50">
-    <div class="auth-blob auth-blob-1"></div>
-    <div class="auth-blob auth-blob-2"></div>
-    <div class="auth-blob auth-blob-3"></div>
-    <div class="w-full sm:max-w-md">
-      <div id="progressWrapper" class="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-4 hidden">
-        <div id="progressBar" class="bg-indigo-600 h-2 rounded-full transition-all duration-500 ease-out shadow-sm" style="width: 33.33%"></div>
-      </div>
-      <div class="text-center mb-8">
-        <div class="text-5xl mb-2">💰</div>
-        <h2 id="stepTitle" class="text-4xl font-extrabold text-slate-900 tracking-tight">FamilyCent</h2>
-        <p id="stepSub" class="mt-2 text-sm text-slate-600 font-medium">אפליקציית ניהול תקציב משפחתי עצמאית ומאובטחת</p>
-      </div>
-    </div>
-
-    <div class="w-full sm:max-w-md">
-      <div class="bg-white py-8 px-6 shadow-xl border border-slate-200/60 rounded-3xl sm:px-10">
-        
-        <!-- טופס כניסה למערכת -->
-        <div id="loginForm" class="space-y-5">
-          <div id="loginAlertPlaceholder"></div>
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">כתובת אימייל</label>
-            <div class="relative">
-              <input id="loginEmail" type="email" placeholder="you@example.com" oninput="handleEmailAutocomplete(this)" onblur="handleEmailBlur(this)" autocomplete="off" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl shadow-sm text-left" style="direction: ltr;">
+  <div id="authPage" class="page active w-full min-h-screen">
+    <div class="fc-split">
+      <!-- פאנל שיווקי/ויזואלי -->
+      <section class="fc-showcase">
+        <div class="fc-bg-shapes"><div class="fc-blueArc"></div></div>
+        <div class="fc-content">
+          <div class="fc-logo"><div class="fc-logoIcon">💰</div><span>Family<span style="color:#2563eb">Cent</span></span></div>
+          <div class="fc-tag">✨ הדרך החכמה לנהל את הכסף המשפחתי</div>
+          <h1 class="fc-h1">כל הכסף שלכם.<br><span>במקום אחד.</span></h1>
+          <p class="fc-lead">ניהול תקציב, מעקב הוצאות, יעדי חיסכון ודוחות — פשוט, ברור ונוח מכל מכשיר.</p>
+          <div class="fc-features">
+            <div class="fc-feature fc-feature-preview" data-preview="preview-dashboard">
+              <i>📊</i><span>תמונה מלאה של המצב הכלכלי</span>
+              <div class="fc-hover-shot" id="preview-dashboard">
+                <div class="fc-shot-title">📊 לוח בקרה ראשי</div>
+                <div class="fc-shot-stats"><b>₪24,750</b><b>₪13,500</b><b>₪8,750</b></div>
+                <div class="fc-bars-mini"><span style="height:42%"></span><span style="height:75%"></span><span style="height:55%"></span><span style="height:88%"></span><span style="height:67%"></span></div>
+              </div>
+            </div>
+            <div class="fc-feature fc-feature-preview" data-preview="preview-goals">
+              <i>🎯</i><span>הגדרת יעדים וחיסכון חכם</span>
+              <div class="fc-hover-shot" id="preview-goals">
+                <div class="fc-shot-title">🎯 יעדי חיסכון</div>
+                <div class="fc-goal"><div class="fc-goal-row"><b>חופשה משפחתית</b><small>68%</small></div><div class="fc-goal-line"><span style="width:68%"></span></div></div>
+                <div class="fc-goal"><div class="fc-goal-row"><b>קרן חירום</b><small>42%</small></div><div class="fc-goal-line"><span style="width:42%"></span></div></div>
+              </div>
+            </div>
+            <div class="fc-feature fc-feature-preview" data-preview="preview-reports">
+              <i>📈</i><span>דוחות וגרפים מתקדמים</span>
+              <div class="fc-hover-shot" id="preview-reports">
+                <div class="fc-shot-title">📈 ניתוח הוצאות</div>
+                <svg class="fc-line-preview" viewBox="0 0 260 90" preserveAspectRatio="none">
+                  <polyline points="0,70 45,55 82,63 120,38 160,49 198,24 230,34 260,12" fill="none" stroke="#4f46e5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <div class="fc-report-pills"><span>מזון</span><span>תחבורה</span><span>חשבונות</span></div>
+              </div>
+            </div>
+            <div class="fc-feature fc-feature-preview" data-preview="preview-security">
+              <i>🔒</i><span>מאובטח ברמה גבוהה</span>
+              <div class="fc-hover-shot" id="preview-security">
+                <div class="fc-shot-title">🔒 אבטחת החשבון</div>
+                <div class="fc-security-card"><strong>החשבון מוגן</strong><small>חיבור מאובטח והגדרות פרטיות</small><div class="fc-secure-badge">✓ מאובטח</div></div>
+              </div>
             </div>
           </div>
-          <div>
-            <label class="text-sm font-semibold text-slate-700 block mb-1">סיסמה</label>
-            <input id="loginPassword" type="password" placeholder="••••••••" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl shadow-sm text-left" style="direction: ltr;">
+          <div class="fc-devices">
+            <div class="fc-laptop">
+              <div class="fc-screen">
+                <div class="fc-top"><i class="fc-circle"></i><i class="fc-circle"></i><i class="fc-circle"></i><b>FamilyCent</b></div>
+                <div class="fc-app">
+                  <aside class="fc-sidebar"><div class="fc-mini">FamilyCent</div><div class="fc-nav on">📊 לוח בקרה</div><div class="fc-nav">📋 דוחות</div><div class="fc-nav">🎯 יעדים</div><div class="fc-nav">📅 לוח שנה</div></aside>
+                  <main class="fc-dash"><h3>שלום, משפחת ישראלי 👋</h3><div class="fc-stats"><div class="fc-stat"><small>יתרה</small><strong class="fc-green">₪24,750</strong></div><div class="fc-stat"><small>הכנסות</small><strong class="fc-purple">₪13,500</strong></div><div class="fc-stat"><small>הוצאות</small><strong class="fc-red">₪8,750</strong></div></div><div class="fc-charts"><div class="fc-chart"><h4>מגמת הוצאות</h4><div class="fc-bars"><div class="fc-bar" style="height:40%"></div><div class="fc-bar" style="height:70%"></div><div class="fc-bar" style="height:55%"></div><div class="fc-bar" style="height:84%"></div><div class="fc-bar" style="height:66%"></div></div></div><div class="fc-chart"><h4>פילוח הוצאות</h4><div style="width:72px;height:72px;border-radius:50%;margin:auto;background:conic-gradient(#6366f1 0 35%,#34d399 35% 60%,#fbbf24 60% 75%,#f472b6 75% 100%)"></div></div></div></main>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="text-left">
-            <button onclick="forgotPassword()" class="text-xs text-indigo-600 font-medium hover:underline">שכחתי סיסמה</button>
-          </div>
-          <button onclick="handleLogin()" class="w-full py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md transition transform active:scale-95">
-            התחברות למערכת
-          </button>
-          <div class="text-center pt-2">
-            <p class="text-sm text-slate-600">משתמשים חדשים? <button onclick="toggleToRegister()" class="text-indigo-600 font-bold hover:underline">לחצו כאן ליצירת חשבון</button></p>
-          </div>
+          <div class="fc-dots"><span class="active"></span><span></span><span></span><span></span></div>
         </div>
+      </section>
 
-        <!-- שלבי הרשמה למשתמש חדש -->
-        <div id="registerForm" class="hidden">
-          <div id="step1" class="step active space-y-5">
+      <!-- פאנל כניסה/הרשמה בפועל -->
+      <section class="fc-loginArea">
+        <div class="fc-card">
+          <div id="progressWrapper" class="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-4 hidden">
+            <div id="progressBar" class="bg-indigo-600 h-2 rounded-full transition-all duration-500 ease-out shadow-sm" style="width: 33.33%"></div>
+          </div>
+          <div class="text-center mb-2">
+            <div class="text-5xl mb-2">💰</div>
+            <h2 id="stepTitle" class="text-3xl font-extrabold text-slate-900 tracking-tight">FamilyCent</h2>
+            <p id="stepSub" class="mt-2 text-sm text-slate-600 font-medium">אפליקציית ניהול תקציב משפחתי עצמאית ומאובטחת</p>
+          </div>
+
+          <div class="fc-tabs">
+            <button id="fcTabLogin" class="fc-tab active" onclick="toggleToLogin()">התחברות</button>
+            <button id="fcTabRegister" class="fc-tab" onclick="toggleToRegister()">הרשמה</button>
+          </div>
+
+          <!-- טופס כניסה למערכת -->
+          <div id="loginForm" class="space-y-5">
+            <div id="loginAlertPlaceholder"></div>
             <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">כתובת אימייל חדשה</label>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">כתובת אימייל</label>
               <div class="relative">
-                <input id="emailInput" type="email" placeholder="you@example.com" oninput="handleEmailAutocomplete(this)" onblur="handleEmailBlur(this)" autocomplete="off" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-left" style="direction: ltr;">
+                <input id="loginEmail" type="email" placeholder="you@example.com" oninput="handleEmailAutocomplete(this)" onblur="handleEmailBlur(this)" autocomplete="off" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl shadow-sm text-left" style="direction: ltr;">
               </div>
             </div>
             <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">בחרו סיסמה</label>
-              <input id="passwordInput" type="password" placeholder="••••••••" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-left" style="direction: ltr;">
+              <label class="text-sm font-semibold text-slate-700 block mb-1">סיסמה</label>
+              <input id="loginPassword" type="password" placeholder="••••••••" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl shadow-sm text-left" style="direction: ltr;">
             </div>
-            <button onclick="goToStep(2)" class="w-full py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">
-              המשך לשלב הבא
+            <div class="text-left">
+              <button onclick="forgotPassword()" class="text-xs text-indigo-600 font-medium hover:underline">שכחתי סיסמה</button>
+            </div>
+            <button onclick="handleLogin()" class="w-full py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md transition transform active:scale-95">
+              התחברות למערכת
             </button>
             <div class="text-center pt-2">
-              <button onclick="toggleToLogin()" class="text-sm text-indigo-600 font-bold hover:underline">כבר יש לי חשבון, חזרה למסך הכניסה</button>
+              <p class="text-sm text-slate-600">משתמשים חדשים? <button onclick="toggleToRegister()" class="text-indigo-600 font-bold hover:underline">לחצו כאן ליצירת חשבון</button></p>
             </div>
           </div>
 
-          <div id="step2" class="step space-y-5">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">שם המשפחה שלכם</label>
-              <input id="familyNameInput" type="text" placeholder="למשל: משפחת ישראלי" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">מספר טלפון</label>
-              <input id="phoneInput" type="tel" placeholder="למשל: 0501234567" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-left" style="direction: ltr;">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-2">בחרו את המטבע הראשי</label>
-              <div class="grid grid-cols-3 gap-3">
-                <label onclick="selectCurrency(this, '₪')" class="currency-label border-2 border-indigo-600 bg-indigo-50/40 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition">
-                  <input type="radio" name="currency" value="₪" checked class="sr-only">
-                  <span class="text-xl font-bold text-slate-800">₪</span>
-                </label>
-                <label onclick="selectCurrency(this, '$')" class="currency-label border border-slate-300 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition">
-                  <input type="radio" name="currency" value="$" class="sr-only">
-                  <span class="text-xl font-bold text-slate-800">$</span>
-                </label>
-                <label onclick="selectCurrency(this, '€')" class="currency-label border border-slate-300 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition">
-                  <input type="radio" name="currency" value="€" class="sr-only">
-                  <span class="text-xl font-bold text-slate-800">€</span>
-                </label>
+          <!-- שלבי הרשמה למשתמש חדש -->
+          <div id="registerForm" class="hidden">
+            <div id="step1" class="step active space-y-5">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">כתובת אימייל חדשה</label>
+                <div class="relative">
+                  <input id="emailInput" type="email" placeholder="you@example.com" oninput="handleEmailAutocomplete(this)" onblur="handleEmailBlur(this)" autocomplete="off" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-left" style="direction: ltr;">
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">בחרו סיסמה</label>
+                <input id="passwordInput" type="password" placeholder="••••••••" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-left" style="direction: ltr;">
+              </div>
+              <button onclick="goToStep(2)" class="w-full py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">
+                המשך לשלב הבא
+              </button>
+              <div class="text-center pt-2">
+                <button onclick="toggleToLogin()" class="text-sm text-indigo-600 font-bold hover:underline">כבר יש לי חשבון, חזרה למסך הכניסה</button>
               </div>
             </div>
-            <div class="flex gap-3 pt-2">
-              <button onclick="goToStep(1)" class="w-1/3 py-3 px-4 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">חזרה</button>
-              <button onclick="goToStep(3)" class="w-2/3 py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">המשך</button>
+
+            <div id="step2" class="step space-y-5">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">שם המשפחה שלכם</label>
+                <input id="familyNameInput" type="text" placeholder="למשל: משפחת ישראלי" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl">
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">מספר טלפון (לא חובה)</label>
+                <input id="phoneInput" type="tel" placeholder="למשל: 0501234567" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-left" style="direction: ltr;">
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-2">בחרו את המטבע הראשי</label>
+                <div class="grid grid-cols-3 gap-3">
+                  <label onclick="selectCurrency(this, '₪')" class="currency-label border-2 border-indigo-600 bg-indigo-50/40 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition">
+                    <input type="radio" name="currency" value="₪" checked class="sr-only">
+                    <span class="text-xl font-bold text-slate-800">₪</span>
+                  </label>
+                  <label onclick="selectCurrency(this, '$')" class="currency-label border border-slate-300 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition">
+                    <input type="radio" name="currency" value="$" class="sr-only">
+                    <span class="text-xl font-bold text-slate-800">$</span>
+                  </label>
+                  <label onclick="selectCurrency(this, '€')" class="currency-label border border-slate-300 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition">
+                    <input type="radio" name="currency" value="€" class="sr-only">
+                    <span class="text-xl font-bold text-slate-800">€</span>
+                  </label>
+                </div>
+              </div>
+              <div class="flex gap-3 pt-2">
+                <button onclick="goToStep(1)" class="w-1/3 py-3 px-4 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">חזרה</button>
+                <button onclick="goToStep(3)" class="w-2/3 py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">המשך</button>
+              </div>
+            </div>
+
+            <div id="step3" class="step space-y-5">
+              <label class="block text-sm font-semibold text-slate-700 mb-1">סמנו קטגוריות מעקב:</label>
+              <div class="grid grid-cols-2 gap-3">
+                <div onclick="toggleCategory(this)" class="border border-indigo-600 bg-indigo-50/40 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-all select-none font-medium">🛒 סופרמרקט</div>
+                <div onclick="toggleCategory(this)" class="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:border-indigo-300 transition-all select-none font-medium">🚗 תחבורה</div>
+                <div onclick="toggleCategory(this)" class="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:border-indigo-300 transition-all select-none font-medium">🏠 מדור</div>
+                <div onclick="toggleCategory(this)" class="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:border-indigo-300 transition-all select-none font-medium">💰 כללי</div>
+              </div>
+              <div class="flex gap-3 pt-2">
+                <button onclick="goToStep(2)" class="w-1/3 py-3 px-4 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">חזרה</button>
+                <button onclick="finishRegistration()" class="w-2/3 py-3 px-4 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition">סיום והקמת החשבון!</button>
+              </div>
             </div>
           </div>
 
-          <div id="step3" class="step space-y-5">
-            <label class="block text-sm font-semibold text-slate-700 mb-1">סמנו קטגוריות מעקב:</label>
-            <div class="grid grid-cols-2 gap-3">
-              <div onclick="toggleCategory(this)" class="border border-indigo-600 bg-indigo-50/40 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-all select-none font-medium">🛒 סופרמרקט</div>
-              <div onclick="toggleCategory(this)" class="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:border-indigo-300 transition-all select-none font-medium">🚗 תחבורה</div>
-              <div onclick="toggleCategory(this)" class="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:border-indigo-300 transition-all select-none font-medium">🏠 מדור</div>
-              <div onclick="toggleCategory(this)" class="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:border-indigo-300 transition-all select-none font-medium">💰 כללי</div>
-            </div>
-            <div class="flex gap-3 pt-2">
-              <button onclick="goToStep(2)" class="w-1/3 py-3 px-4 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">חזרה</button>
-              <button onclick="finishRegistration()" class="w-2/3 py-3 px-4 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition">סיום והקמת החשבון!</button>
-            </div>
-          </div>
         </div>
-
-      </div>
+      </section>
     </div>
   </div>
   <div id="dashboardPage" class="page w-full min-h-screen flex flex-col md:flex-row">
@@ -1447,6 +1575,23 @@
       }
     }
 
+    /* --- שליחת מייל עם קובץ מצורף (למשל תמונת לוח שנה) --- */
+    async function sendEmailWithAttachment(subject, message, base64Content, filename) {
+      try {
+        const response = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: currentUserEmail, subject, text: message, attachment: { filename, content: base64Content } })
+        });
+        const data = await response.json();
+        if (!response.ok) { throw new Error(data.error || 'שליחת המייל נכשלה'); }
+        showToast('המייל נשלח בהצלחה! 📧');
+      } catch (err) {
+        console.error(err);
+        showToast('שליחת המייל נכשלה: ' + err.message);
+      }
+    }
+
     function sendTestEmail() {
       sendEmail('FamilyCent - מייל בדיקה', 'זהו מייל בדיקה מאפליקציית FamilyCent. אם קיבלתם את זה, הכל תקין! ✅');
     }
@@ -2050,6 +2195,18 @@
       renderFinancialCalendar();
     }
 
+    /* --- המרת מספר יום עברי (1-30) לאותיות עבריות (גימטריה), כולל הכללים המקובלים ט"ו / ט"ז --- */
+    function hebrewDayLetters(num) {
+      const ones = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'];
+      const tens = ['', 'י', 'כ', 'ל', 'מ', 'נ'];
+      if (num === 15) return 'ט"ו';
+      if (num === 16) return 'ט"ז';
+      let t = Math.floor(num / 10), o = num % 10;
+      let letters = tens[t] + ones[o];
+      if (letters.length === 1) return letters + "'";
+      return letters.slice(0, -1) + '"' + letters.slice(-1);
+    }
+
     function renderFinancialCalendar() {
       const grid = document.getElementById('calendarGrid');
       const label = document.getElementById('calendarMonthLabel');
@@ -2083,17 +2240,24 @@
         eventsByDay[day].recurring = true;
       });
 
-      let hebrewFormatter = null;
-      try { hebrewFormatter = new Intl.DateTimeFormat('he-IL-u-ca-hebrew', { day: 'numeric', month: 'short' }); } catch (e) { hebrewFormatter = null; }
+      let hebrewNumFormatter = null;
+      try { hebrewNumFormatter = new Intl.DateTimeFormat('he-IL-u-ca-hebrew', { day: 'numeric' }); } catch (e) { hebrewNumFormatter = null; }
 
       let html = '';
       for (let i = 0; i < startOffset; i++) { html += `<div class="h-24"></div>`; }
 
       const today = new Date();
+      window.__calendarDayItems = window.__calendarDayItems || {};
+      window.__calendarDayItems[`${year}-${month}`] = eventsByDay;
+
       for (let day = 1; day <= daysInMonth; day++) {
         const cellDate = new Date(year, month, day);
         const isToday = cellDate.toDateString() === today.toDateString();
-        const hebrewLabel = hebrewFormatter ? hebrewFormatter.format(cellDate) : '';
+        let hebrewLabel = '';
+        if (hebrewNumFormatter) {
+          const hNum = parseInt(hebrewNumFormatter.format(cellDate), 10);
+          hebrewLabel = isNaN(hNum) ? '' : hebrewDayLetters(hNum);
+        }
         const ev = eventsByDay[day] || { items: [] };
         const recurringDot = ev.recurring ? '🔁' : '';
 
@@ -2108,7 +2272,9 @@
         }
 
         html += `
-          <div class="h-24 border ${isToday ? 'border-indigo-500 bg-indigo-50' : 'border-slate-100'} rounded-lg p-1.5 flex flex-col overflow-hidden">
+          <div class="calendar-day-cell h-24 border ${isToday ? 'border-indigo-500 bg-indigo-50' : 'border-slate-100'} rounded-lg p-1.5 flex flex-col relative transition-transform hover:scale-110 hover:shadow-xl hover:z-40"
+               onmouseenter="showCalendarDayPopover(event, ${year}, ${month}, ${day})"
+               onmouseleave="hideCalendarDayPopover()">
             <div class="flex justify-between items-start mb-0.5">
               <span class="text-sm font-bold ${isToday ? 'text-indigo-700' : 'text-slate-700'}">${day}</span>
               <span class="text-[10px] font-semibold text-indigo-400">${hebrewLabel}</span>
@@ -2122,16 +2288,50 @@
       grid.innerHTML = html;
     }
 
+    /* --- ריחוף על יום בלוח שנה: מציג פופאובר עם כל התנועות של אותו יום --- */
+    function showCalendarDayPopover(evt, year, month, day) {
+      const cell = evt.currentTarget;
+      const eventsByDay = (window.__calendarDayItems || {})[`${year}-${month}`] || {};
+      const ev = eventsByDay[day];
+      if (!ev || !ev.items || ev.items.length === 0) return;
+
+      let existing = document.getElementById('calendarDayPopover');
+      if (existing) existing.remove();
+
+      let itemsHtml = ev.items.map(it => {
+        const color = it.isExp ? 'text-rose-600' : 'text-emerald-600';
+        return `<div class="flex justify-between gap-3 py-0.5 border-b border-slate-100 last:border-0">
+          <span class="truncate">${it.desc}</span>
+          <span class="font-bold ${color} whitespace-nowrap">${it.isExp ? '-' : '+'}${currentUserCurrency}${it.amount.toLocaleString()}</span>
+        </div>`;
+      }).join('');
+
+      const pop = document.createElement('div');
+      pop.id = 'calendarDayPopover';
+      pop.className = 'absolute z-50 bg-white border border-indigo-200 shadow-xl rounded-xl p-3 text-xs w-56';
+      pop.style.top = '0';
+      pop.style.right = '0';
+      pop.innerHTML = `<div class="font-bold text-indigo-700 mb-1">${day}/${month + 1}/${year} - כל התנועות</div>${itemsHtml}`;
+      cell.style.zIndex = '40';
+      cell.appendChild(pop);
+    }
+
+    function hideCalendarDayPopover() {
+      const existing = document.getElementById('calendarDayPopover');
+      if (existing) existing.remove();
+    }
+
     function printFinancialCalendar() {
       const grid = document.getElementById('calendarGrid');
       if (!grid) return;
       const label = document.getElementById('calendarMonthLabel').innerText;
       const reportArea = document.getElementById('printReportArea');
+      // גרסה רחבה (לרוחב) של הלוח - לשימוש בהדפסה, PDF ותמונה למייל
       reportArea.innerHTML = `
-        <div class="w-full text-right" dir="rtl" style="font-family: 'Assistant', sans-serif;">
+        <div class="w-full text-right" dir="rtl" style="font-family: 'Assistant', sans-serif; min-width: 1000px;">
           <div class="no-print mb-6 flex justify-end gap-2">
-            <button onclick="downloadReportPDF('לוח-שנה-${label.replace(/\s/g, '-')}.pdf')" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition">⬇️ הורד PDF</button>
-            <button onclick="emailFinancialCalendar('${label}')" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח במייל</button>
+            <button onclick="downloadCalendarPDFDirect()" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition">⬇️ הורד PDF</button>
+            <button onclick="emailCalendarImage()" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח תמונת לוח במייל</button>
             <button onclick="window.print()" class="px-5 py-2 bg-violet-600 text-white font-bold rounded-xl shadow-md hover:bg-violet-700 transition">🖨️ הדפסה</button>
             <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור</button>
           </div>
@@ -2139,25 +2339,13 @@
             <h1 class="text-2xl font-black text-indigo-600">FamilyCent - לוח שנה פיננסי</h1>
             <p class="text-sm text-slate-600">${label}</p>
           </div>
-          <div class="grid grid-cols-7 gap-1">${grid.outerHTML}</div>
+          <div class="grid grid-cols-7 gap-2 text-center text-xs font-bold text-slate-400 mb-2">
+            <div>א</div><div>ב</div><div>ג</div><div>ד</div><div>ה</div><div>ו</div><div>ש</div>
+          </div>
+          <div class="grid grid-cols-7 gap-2">${grid.innerHTML}</div>
         </div>
       `;
       reportArea.classList.remove('hidden');
-    }
-
-    function emailFinancialCalendar(label) {
-      const year = calendarViewDate.getFullYear();
-      const month = calendarViewDate.getMonth();
-      let lines = [];
-      localTransactions.forEach(t => {
-        const d = new Date(t.timestamp);
-        if (d.getFullYear() === year && d.getMonth() === month) {
-          const isExp = t.actionType && t.actionType.includes('הוצאה');
-          lines.push(`${d.getDate()}/${month + 1} | ${t.description || t.category} | ${isExp ? '-' : '+'}${currentUserCurrency}${parseFloat(t.amount).toLocaleString()}`);
-        }
-      });
-      if (lines.length === 0) { showToast('אין תנועות בחודש זה לשליחה.'); return; }
-      sendEmail(`FamilyCent - לוח שנה פיננסי (${label})`, lines.join('\n'));
     }
 
     function printCalendarDirect() {
@@ -2165,9 +2353,34 @@
       setTimeout(() => window.print(), 200);
     }
 
-    function emailCalendarDirect() {
+    /* --- שליחת תמונה (צילום) של כל לוח השנה במייל, בסגנון לוח שנה --- */
+    function emailCalendarImage() {
       const label = document.getElementById('calendarMonthLabel').innerText;
-      emailFinancialCalendar(label);
+      printFinancialCalendar();
+      const el = document.getElementById('printReportArea');
+      showToast('מכין תמונה של לוח השנה...');
+      setTimeout(() => {
+        html2pdf().set({
+          html2canvas: { scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('no-print') }
+        }).from(el).toCanvas().then(canvas => {
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+          const base64 = dataUrl.split(',')[1];
+          sendEmailWithAttachment(
+            `FamilyCent - לוח שנה פיננסי (${label})`,
+            `מצורפת תמונה של לוח השנה הפיננסי לחודש ${label}.`,
+            base64,
+            `לוח-שנה-${label.replace(/\s/g, '-')}.jpg`
+          );
+          closeReportView();
+        }).catch(err => {
+          console.error(err);
+          showToast('שגיאה ביצירת תמונת הלוח שנה');
+        });
+      }, 350);
+    }
+
+    function emailCalendarDirect() {
+      emailCalendarImage();
     }
 
     function downloadCalendarPDFDirect() {
@@ -2386,6 +2599,9 @@
       document.getElementById('registerForm').classList.remove('hidden');
       document.getElementById('progressWrapper').classList.remove('hidden');
       document.getElementById('stepTitle').innerText = 'יצירת חשבון חדש';
+      const tabLogin = document.getElementById('fcTabLogin');
+      const tabRegister = document.getElementById('fcTabRegister');
+      if (tabLogin && tabRegister) { tabLogin.classList.remove('active'); tabRegister.classList.add('active'); }
       goToStep(1);
     }
 
@@ -2400,6 +2616,9 @@
       document.getElementById('loginForm').classList.remove('hidden');
       document.getElementById('progressWrapper').classList.add('hidden');
       document.getElementById('stepTitle').innerText = 'FamilyCent';
+      const tabLogin = document.getElementById('fcTabLogin');
+      const tabRegister = document.getElementById('fcTabRegister');
+      if (tabLogin && tabRegister) { tabRegister.classList.remove('active'); tabLogin.classList.add('active'); }
     }
 
     function goToStep(stepNumber) {
@@ -3200,6 +3419,7 @@
             <td class="p-3 font-bold ${netoColor}">${currentUserCurrency}${r.neto.toLocaleString()}</td>
             <td class="p-3 text-left space-x-1">
               <button onclick="viewArchivedReport('${r.id}')" class="px-2.5 py-1 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition">👁️ הצג והדפס דוח</button>
+              <button onclick="downloadArchivedReportPDFDirect('${r.id}')" class="px-2.5 py-1 bg-rose-50 text-rose-700 rounded-lg text-xs font-bold hover:bg-rose-100 transition" title="הורד דוח זה כ-PDF">⬇️ PDF</button>
               <button onclick="emailArchivedReport('${r.id}')" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition" title="שלח דוח זה במייל">📧 שלח במייל</button>
               <button onclick="deleteArchivedReport('${r.id}')" class="px-2.5 py-1 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition" title="מחק מהארכיון">🗑️</button>
             </td>
@@ -3211,6 +3431,14 @@
 
     function closeReportView() {
       document.getElementById('printReportArea').classList.add('hidden');
+    }
+
+    /* --- הורדת PDF ישירה לדוח מהארכיון, בלי צורך לפתוח אותו קודם --- */
+    function downloadArchivedReportPDFDirect(reportId) {
+      const rep = generatedReports.find(r => r.id === reportId);
+      if (!rep) { showToast('דוח לא נמצא.'); return; }
+      viewArchivedReport(reportId);
+      setTimeout(() => downloadReportPDF(`${rep.reportName.replace(/[^\w\s-]/g, '')}.pdf`), 350);
     }
 
     function viewArchivedReport(reportId) {
