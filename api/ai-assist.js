@@ -1,6 +1,7 @@
 // פונקציית שרת (Vercel Serverless Function) - מריצה בקשות AI עם מפתח סודי שנשמר בהגדרות הפרויקט ב-Vercel (Environment Variables), ולא בקוד שרץ בדפדפן.
 // עודכן להשתמש ב-Google Gemini (יש לו רמה חינמית נדיבה) במקום OpenAI (שדורש כרטיס אשראי ותשלום).
 // כדי לקבל מפתח חינם: היכנסו ל-https://aistudio.google.com/apikey , צרו מפתח, והוסיפו אותו ב-Vercel כמשתנה סביבה בשם GEMINI_API_KEY.
+// אם בעתיד גם gemini-3.6-flash יוצא משימוש, אפשר לבדוק שם מודל עדכני בכתובת https://ai.google.dev/gemini-api/docs/models ולעדכן את המשתנה MODEL למטה.
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -12,7 +13,7 @@ module.exports = async function handler(req, res) {
   }
 
   const { mode, description, categories, imageBase64, question, financialSummary } = req.body || {};
-  const MODEL = 'gemini-2.0-flash';
+  const MODEL = 'gemini-3.6-flash';
   const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
 
   async function callGemini(parts, generationConfig) {
