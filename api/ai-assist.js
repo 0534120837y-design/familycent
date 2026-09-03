@@ -12,18 +12,22 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'GEMINI_API_KEY לא מוגדר בהגדרות הפרויקט ב-Vercel. אפשר לקבל מפתח חינמי בכתובת https://aistudio.google.com/apikey' });
   }
 
-  const { mode, description, categories, imageBase64, question, financialSummary } = req.body || {};
+  const { mode, description, categories, imageBase64, question, financialSummary, history } = req.body || {};
   const MODEL = 'gemini-3.6-flash';
   const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
 
-  async function callGemini(parts, generationConfig) {
+  async function callGemini(parts, generationConfig, systemInstructionText, priorContents) {
+    const body = {
+      contents: [...(priorContents || []), { role: 'user', parts }],
+      generationConfig: generationConfig || {}
+    };
+    if (systemInstructionText) {
+      body.systemInstruction = { parts: [{ text: systemInstructionText }] };
+    }
     const response = await fetch(GEMINI_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts }],
-        generationConfig: generationConfig || {}
-      })
+      body: JSON.stringify(body)
     });
     const data = await response.json();
     if (!response.ok) {
@@ -56,11 +60,33 @@ module.exports = async function handler(req, res) {
       if (!financialSummary) {
         return res.status(400).json({ error: 'חסר financialSummary' });
       }
-      const systemPrompt = 'אתה יועץ פיננסי אישי ידידותי לאפליקציית ניהול תקציב משפחתי בשם FamilyCent. תענה תמיד בעברית, בטון חם ותומך אך ישיר. קיבלת סיכום נתונים פיננסיים של המשתמש (הכנסות, הוצאות לפי קטגוריה, תקציבים, יעדי חיסכון, והשוואה לחודשים קודמים). תן ניתוח קצר וממוקד: איפה ההוצאות גדלו, איפה אפשר לחסוך, אילו תקציבים עומדים לחרוג, כמה אפשר להפריש לחיסכון החודש, והשוואה לחודשים קודמים. אם המשתמש שאל שאלה ספציפית - התמקד בה. תשובה בפורמט טקסט פשוט (לא markdown), עד כ-200 מילים, עם שורות קצרות וברורות.';
-      const userPrompt = `נתוני התקציב שלי:\n${financialSummary}\n\n${question ? `השאלה שלי: ${question}` : 'מה כדאי לי לעשות החודש? תן לי ניתוח כללי.'}`;
+      const systemPrompt = 'אתה יועץ פיננסי אישי ידידותי לאפליקציית ניהול תקציב משפחתי בשם FamilyCent. תענה תמיד בעברית, בטון חם ותומך אך ישיר. תתייחס לסיכום נתונים פיננסיים שנשלח לך בתחילת השיחה (הכנסות, הוצאות לפי קטגוריה, תקציבים, יעדי חיסכון, והשוואה לחודשים קודמים) ולהיסטוריית השיחה הקודמת אם יש. תן ניתוח קצר וממוקד: איפה ההוצאות גדלו, איפה אפשר לחסוך, אילו תקציבים עומדים לחרוג, כמה אפשר להפריש לחיסכון החודש. אם המשתמש שאל שאלה ספציפית - התמקד בה, וזכור את מה שנאמר קודם בשיחה. תשובה בפורמט טקסט פשוט (לא markdown), עד כ-200 מילים, עם שורות קצרות וברורות.';
+
+      // בונים היסטוריית שיחה (contents) מהמערך history שנשלח מהלקוח: [{question, advice}, ...]
+      let priorContents = [];
+      if (Array.isArray(history) && history.length > 0) {
+        history.forEach((turn, idx) => {
+          const qText = idx === 0
+            ? `נתוני התקציב שלי:\n${financialSummary}\n\n${turn.question || 'מה כדאי לי לעשות החודש? תן לי ניתוח כללי.'}`
+            : (turn.question || '');
+          if (qText) priorContents.push({ role: 'user', parts: [{ text: qText }] });
+          if (turn.advice) priorContents.push({ role: 'model', parts: [{ text: turn.advice }] });
+        });
+      }
+
+      const isFirstTurn = priorContents.length === 0;
+      const userPrompt = isFirstTurn
+        ? `נתוני התקציב שלי:\n${financialSummary}\n\n${question ? `השאלה שלי: ${question}` : 'מה כדאי לי לעשות החודש? תן לי ניתוח כללי.'}`
+        : (question || 'מה כדאי לי לעשות החודש? תן לי ניתוח כללי.');
+
       let advice = '';
       try {
-        advice = await callGemini([{ text: systemPrompt + '\n\n' + userPrompt }], { maxOutputTokens: 1500, temperature: 0.4, thinkingConfig: { thinkingLevel: 'low' } });
+        advice = await callGemini(
+          [{ text: userPrompt }],
+          { maxOutputTokens: 1500, temperature: 0.4, thinkingConfig: { thinkingLevel: 'low' } },
+          systemPrompt,
+          priorContents
+        );
       } catch (e) {
         console.error('Gemini advisor error:', e.message);
         return res.status(500).json({ error: 'לא התקבלה תשובה מה-AI: ' + e.message });
