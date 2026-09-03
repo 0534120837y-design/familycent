@@ -44,7 +44,7 @@ module.exports = async function handler(req, res) {
       const prompt = `You categorize personal finance transactions. Respond with ONLY the exact category string from the provided list, nothing else, no explanation.\nDescription: "${description}"\nAvailable categories: ${categories.join(' | ')}\nWhich category fits best? Respond with only the exact category text from the list.`;
       let suggestion = '';
       try {
-        suggestion = await callGemini([{ text: prompt }], { maxOutputTokens: 200, temperature: 0, thinkingConfig: { thinkingBudget: 0 } });
+        suggestion = await callGemini([{ text: prompt }], { maxOutputTokens: 200, temperature: 0, thinkingConfig: { thinkingLevel: 'minimal' } });
       } catch (e) {
         console.error('Gemini suggest_category error:', e.message);
         return res.status(500).json({ error: e.message || 'שגיאה מ-Gemini' });
@@ -60,7 +60,7 @@ module.exports = async function handler(req, res) {
       const userPrompt = `נתוני התקציב שלי:\n${financialSummary}\n\n${question ? `השאלה שלי: ${question}` : 'מה כדאי לי לעשות החודש? תן לי ניתוח כללי.'}`;
       let advice = '';
       try {
-        advice = await callGemini([{ text: systemPrompt + '\n\n' + userPrompt }], { maxOutputTokens: 1500, temperature: 0.4, thinkingConfig: { thinkingBudget: 0 } });
+        advice = await callGemini([{ text: systemPrompt + '\n\n' + userPrompt }], { maxOutputTokens: 1500, temperature: 0.4, thinkingConfig: { thinkingLevel: 'low' } });
       } catch (e) {
         console.error('Gemini advisor error:', e.message);
         return res.status(500).json({ error: 'לא התקבלה תשובה מה-AI: ' + e.message });
@@ -81,7 +81,7 @@ module.exports = async function handler(req, res) {
         raw = await callGemini([
           { text: prompt },
           { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } }
-        ], { maxOutputTokens: 500, thinkingConfig: { thinkingBudget: 0 } });
+        ], { maxOutputTokens: 500, thinkingConfig: { thinkingLevel: 'minimal' } });
       } catch (e) {
         console.error('Gemini parse_receipt error:', e.message);
         return res.status(500).json({ error: e.message || 'שגיאה מ-Gemini' });
