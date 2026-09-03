@@ -33,6 +33,7 @@
       #printReportArea, #printReportArea * { visibility: visible; }
       #printReportArea { position: absolute; left: 0; top: 0; width: 100%; }
       .no-print { display: none !important; }
+      #calendarWideWrap { width: 100%; }
     }
 
     /* --- מצב כהה --- */
@@ -486,14 +487,17 @@
         </div>
 
         <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md mb-6 no-print">
-          <h3 class="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">🤖 היועץ הפיננסי של FamilyCent</h3>
+          <div class="flex items-center justify-between mb-1">
+            <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">🤖 היועץ הפיננסי של FamilyCent</h3>
+            <button onclick="resetFinancialAdvisor()" id="advisorResetBtn" class="text-xs font-semibold text-slate-500 hover:text-rose-600 hover:underline hidden">🗑️ שיחה חדשה</button>
+          </div>
           <p class="text-[11px] text-slate-400 mb-4">שאלו שאלה חופשית, או פשוט לחצו "מה כדאי לי לעשות החודש?" לניתוח כללי</p>
           <div class="flex flex-col sm:flex-row gap-2 mb-3">
             <input id="advisorQuestionInput" type="text" placeholder="למשל: איפה אני יכול לחסוך החודש?" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-indigo-500">
             <button onclick="askFinancialAdvisor()" id="advisorAskBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2 rounded-xl text-sm whitespace-nowrap transition">💬 שאל את היועץ</button>
           </div>
           <button onclick="askFinancialAdvisor(true)" class="text-xs font-bold text-indigo-600 hover:underline mb-2">✨ מה כדאי לי לעשות החודש? (ניתוח כללי)</button>
-          <div id="advisorResponse" class="mt-3 text-sm text-slate-700 whitespace-pre-line bg-slate-50 border border-slate-100 rounded-xl p-4 hidden"></div>
+          <div id="advisorResponse" class="mt-3 space-y-3 max-h-96 overflow-y-auto hidden"></div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8 no-print">
@@ -1616,22 +1620,76 @@
       });
 
       const text = `רשימת תנועות (${filtered.length})\nסה"כ הכנסות: ${currentUserCurrency}${totalIncome.toLocaleString()}\nסה"כ הוצאות: ${currentUserCurrency}${totalExpense.toLocaleString()}\n\n${lines.join('\n')}`;
-      sendEmail('FamilyCent - רשימת תנועות', text);
+      const subject = 'FamilyCent - רשימת תנועות';
+      showToast('מכין קובץ מצורף...');
+      generatePrintReport();
+      setTimeout(() => {
+        const el = document.getElementById('printReportArea');
+        getElementPdfBase64(el, 'portrait', 'רשימת-תנועות.pdf').then(base64 => {
+          sendEmailWithAttachment(subject, text, base64, 'רשימת-תנועות.pdf');
+          closeReportView();
+        }).catch(err => {
+          console.error(err);
+          showToast('לא הצלחנו לצרף PDF, שולח כטקסט בלבד...');
+          sendEmail(subject, text);
+          closeReportView();
+        });
+      }, 350);
     }
 
     /* --- הורדת דוח כקובץ PDF --- */
-    function downloadReportPDF(filename) {
+    function downloadReportPDF(filename, orientation) {
       const el = document.getElementById('printReportArea');
       if (!el) return;
-      const opt = {
-        margin: 0.3,
-        filename: filename || 'FamilyCent-Report.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, ignoreElements: (el) => el.classList && el.classList.contains('no-print') },
-        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
-      };
       showToast('מכין את קובץ ה-PDF...');
-      html2pdf().set(opt).from(el).save();
+      waitForRenderReady(el).then(() => {
+        const opt = {
+          margin: 0.3,
+          filename: filename || 'FamilyCent-Report.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 2, useCORS: true,
+            windowWidth: Math.max(document.documentElement.scrollWidth, el.scrollWidth),
+            scrollX: 0, scrollY: 0,
+            ignoreElements: (e) => e.classList && e.classList.contains('no-print')
+          },
+          jsPDF: { unit: 'in', format: 'a4', orientation: orientation || 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] }
+        };
+        html2pdf().set(opt).from(el).save();
+      }).catch(err => {
+        console.error(err);
+        showToast('שגיאה ביצירת קובץ ה-PDF');
+      });
+    }
+
+    /* --- ממתין לטעינת גופנים + ריצת ה-DOM לפני צילום/ייצוא, כדי למנוע עמודים ריקים/חתוכים --- */
+    function waitForRenderReady(el) {
+      const fontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+      return fontsReady.then(() => new Promise(resolve => {
+        // שני requestAnimationFrame מבטיחים שהדפדפן סיים לצייר את הפריסה (layout+paint) לפני הצילום
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }));
+    }
+
+    /* --- מייצר PDF של אלמנט ומחזיר אותו כ-base64 (בלי צילום מסך, לצירוף במייל) --- */
+    function getElementPdfBase64(el, orientation, filename) {
+      return waitForRenderReady(el).then(() => {
+        const opt = {
+          margin: 0.3,
+          filename: filename || 'FamilyCent.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 2, useCORS: true,
+            windowWidth: Math.max(document.documentElement.scrollWidth, el.scrollWidth),
+            scrollX: 0, scrollY: 0,
+            ignoreElements: (e) => e.classList && e.classList.contains('no-print')
+          },
+          jsPDF: { unit: 'in', format: 'a4', orientation: orientation || 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] }
+        };
+        return html2pdf().set(opt).from(el).outputPdf('datauristring').then(dataUri => dataUri.split(',')[1]);
+      });
     }
     /* --- סוף הורדת PDF --- */
 
@@ -1644,7 +1702,22 @@
         rep = generatedReports.find(r => r.id === reportId);
         if (!rep) { showToast('דוח לא נמצא.'); return; }
       }
-      sendEmail(`FamilyCent - ${rep.reportName}`, buildReportEmailText(rep));
+      const bodyText = buildReportEmailText(rep);
+      const subject = `FamilyCent - ${rep.reportName}`;
+      showToast('מכין קובץ מצורף לדוח...');
+      viewArchivedReport(reportId);
+      setTimeout(() => {
+        const el = document.getElementById('printReportArea');
+        getElementPdfBase64(el, 'portrait', `${rep.reportName.replace(/[^\w\s-]/g, '')}.pdf`).then(base64 => {
+          sendEmailWithAttachment(subject, bodyText, base64, `${rep.reportName.replace(/[^\w\s-]/g, '')}.pdf`);
+          closeReportView();
+        }).catch(err => {
+          console.error(err);
+          showToast('לא הצלחנו לצרף PDF, שולח את תוכן הדוח כטקסט בלבד...');
+          sendEmail(subject, bodyText);
+          closeReportView();
+        });
+      }, 350);
     }
 
     function sendReminderDigestEmail() {
@@ -1725,9 +1798,38 @@
       return lines.join('\n');
     }
 
+    let advisorHistory = [];
+
+    function renderAdvisorChat() {
+      const responseEl = document.getElementById('advisorResponse');
+      const resetBtn = document.getElementById('advisorResetBtn');
+      if (advisorHistory.length === 0) {
+        responseEl.classList.add('hidden');
+        responseEl.innerHTML = '';
+        resetBtn.classList.add('hidden');
+        return;
+      }
+      responseEl.classList.remove('hidden');
+      resetBtn.classList.remove('hidden');
+      responseEl.innerHTML = advisorHistory.map(turn => `
+        ${turn.question ? `<div class="flex justify-end"><div class="bg-indigo-600 text-white text-sm rounded-2xl rounded-tl-sm px-4 py-2 max-w-[85%] whitespace-pre-line">${turn.question}</div></div>` : ''}
+        <div class="flex justify-start"><div class="bg-slate-50 border border-slate-100 text-slate-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3 max-w-[90%] whitespace-pre-line">${turn.advice}</div></div>
+      `).join('');
+      responseEl.scrollTop = responseEl.scrollHeight;
+    }
+
+    function resetFinancialAdvisor() {
+      advisorHistory = [];
+      renderAdvisorChat();
+      const questionInput = document.getElementById('advisorQuestionInput');
+      if (questionInput) questionInput.value = '';
+      showToast('התחלנו שיחה חדשה עם היועץ 🔄');
+    }
+
     async function askFinancialAdvisor(generalMode) {
       const questionInput = document.getElementById('advisorQuestionInput');
       const question = generalMode ? '' : questionInput.value.trim();
+      if (!generalMode && !question) { showToast('כתבו שאלה, או לחצו על "ניתוח כללי".'); return; }
       const responseEl = document.getElementById('advisorResponse');
       const btn = document.getElementById('advisorAskBtn');
 
@@ -1735,24 +1837,33 @@
       btn.innerText = '⏳ חושב...';
       btn.disabled = true;
       responseEl.classList.remove('hidden');
-      responseEl.innerText = 'מנתח את הנתונים שלכם...';
+      document.getElementById('advisorResetBtn').classList.remove('hidden');
+      const thinkingLine = `<div class="flex justify-start"><div class="bg-slate-50 border border-slate-100 text-slate-400 text-sm rounded-2xl rounded-tr-sm px-4 py-3 italic" id="advisorThinking">מנתח את הנתונים שלכם...</div></div>`;
+      responseEl.insertAdjacentHTML('beforeend', thinkingLine);
+      responseEl.scrollTop = responseEl.scrollHeight;
 
       try {
         const financialSummary = buildFinancialSummaryText();
         const response = await fetch('/api/ai-assist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'advisor', question, financialSummary })
+          body: JSON.stringify({ mode: 'advisor', question, financialSummary, history: advisorHistory })
         });
         const data = await response.json();
+        const thinkingEl = document.getElementById('advisorThinking');
+        if (thinkingEl) thinkingEl.closest('.flex').remove();
         if (data.advice) {
-          responseEl.innerText = data.advice;
+          advisorHistory.push({ question: generalMode ? '✨ מה כדאי לי לעשות החודש? (ניתוח כללי)' : question, advice: data.advice });
+          renderAdvisorChat();
+          if (!generalMode) questionInput.value = '';
         } else {
-          responseEl.innerText = 'שגיאה: ' + (data.error || 'לא הצלחנו לקבל תשובה מהיועץ (סטטוס ' + response.status + ')');
+          responseEl.insertAdjacentHTML('beforeend', `<div class="flex justify-start"><div class="bg-rose-50 border border-rose-100 text-rose-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3">שגיאה: ${data.error || 'לא הצלחנו לקבל תשובה מהיועץ (סטטוס ' + response.status + ')'}</div></div>`);
         }
       } catch (err) {
         console.error(err);
-        responseEl.innerText = 'שגיאת רשת בפנייה ליועץ הפיננסי: ' + (err.message || err);
+        const thinkingEl = document.getElementById('advisorThinking');
+        if (thinkingEl) thinkingEl.closest('.flex').remove();
+        responseEl.insertAdjacentHTML('beforeend', `<div class="flex justify-start"><div class="bg-rose-50 border border-rose-100 text-rose-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3">שגיאת רשת בפנייה ליועץ הפיננסי: ${err.message || err}</div></div>`);
       } finally {
         btn.innerText = originalBtnText;
         btn.disabled = false;
@@ -2326,13 +2437,13 @@
       if (!grid) return;
       const label = document.getElementById('calendarMonthLabel').innerText;
       const reportArea = document.getElementById('printReportArea');
-      // גרסה רחבה (לרוחב) של הלוח - לשימוש בהדפסה, PDF ותמונה למייל
+      // גרסה רחבה (לרוחב) של הלוח - לשימוש בהדפסה, PDF ותמונה למייל. הרוחב מוגבל ל-100% של המכל, כדי למנוע חיתוך/דפים ריקים בגלישה מחוץ למסך.
       reportArea.innerHTML = `
-        <div class="w-full text-right" dir="rtl" style="font-family: 'Assistant', sans-serif; min-width: 1000px;">
-          <div class="no-print mb-6 flex justify-end gap-2">
+        <div id="calendarWideWrap" class="w-full text-right" dir="rtl" style="font-family: 'Assistant', sans-serif;">
+          <div class="no-print mb-6 flex justify-end gap-2 flex-wrap">
             <button onclick="downloadCalendarPDFDirect()" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition">⬇️ הורד PDF</button>
             <button onclick="emailCalendarImage()" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח תמונת לוח במייל</button>
-            <button onclick="window.print()" class="px-5 py-2 bg-violet-600 text-white font-bold rounded-xl shadow-md hover:bg-violet-700 transition">🖨️ הדפסה</button>
+            <button onclick="printCalendarDirect()" class="px-5 py-2 bg-violet-600 text-white font-bold rounded-xl shadow-md hover:bg-violet-700 transition">🖨️ הדפסה</button>
             <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור</button>
           </div>
           <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-3 mb-6">
@@ -2350,33 +2461,63 @@
 
     function printCalendarDirect() {
       printFinancialCalendar();
-      setTimeout(() => window.print(), 200);
+      const pageStyle = document.createElement('style');
+      pageStyle.id = 'landscapePrintStyle';
+      pageStyle.textContent = '@page { size: A4 landscape; margin: 10mm; }';
+      document.head.appendChild(pageStyle);
+      setTimeout(() => {
+        window.print();
+        setTimeout(() => { const s = document.getElementById('landscapePrintStyle'); if (s) s.remove(); }, 1000);
+      }, 250);
     }
 
-    /* --- שליחת תמונה (צילום) של כל לוח השנה במייל, בסגנון לוח שנה --- */
+    /* --- שליחת תמונה (צילום) של כל לוח השנה במייל, בסגנון לוח שנה - כולל תוכן טקסטואלי מלא בגוף המייל + התמונה כקובץ מצורף --- */
     function emailCalendarImage() {
       const label = document.getElementById('calendarMonthLabel').innerText;
+      const year = calendarViewDate.getFullYear();
+      const month = calendarViewDate.getMonth();
+
+      let lines = [];
+      let totalIncome = 0, totalExpense = 0;
+      localTransactions.forEach(t => {
+        const d = new Date(t.timestamp);
+        if (d.getFullYear() === year && d.getMonth() === month) {
+          const isExp = t.actionType && t.actionType.includes('הוצאה');
+          const amt = parseFloat(t.amount) || 0;
+          if (isExp) totalExpense += amt; else totalIncome += amt;
+          lines.push(`${d.getDate()}/${month + 1} | ${t.description || t.category} | ${isExp ? '-' : '+'}${currentUserCurrency}${amt.toLocaleString()}`);
+        }
+      });
+      if (lines.length === 0) { showToast('אין תנועות בחודש זה לשליחה.'); return; }
+
+      const bodyText = `לוח שנה פיננסי - ${label}\n\nסה"כ הכנסות: ${currentUserCurrency}${totalIncome.toLocaleString()}\nסה"כ הוצאות: ${currentUserCurrency}${totalExpense.toLocaleString()}\n\nכל התנועות של החודש:\n${lines.join('\n')}\n\n(תמונה מלאה של הלוח מצורפת להודעה זו)`;
+
       printFinancialCalendar();
       const el = document.getElementById('printReportArea');
       showToast('מכין תמונה של לוח השנה...');
-      setTimeout(() => {
-        html2pdf().set({
-          html2canvas: { scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('no-print') }
-        }).from(el).toCanvas().then(canvas => {
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-          const base64 = dataUrl.split(',')[1];
-          sendEmailWithAttachment(
-            `FamilyCent - לוח שנה פיננסי (${label})`,
-            `מצורפת תמונה של לוח השנה הפיננסי לחודש ${label}.`,
-            base64,
-            `לוח-שנה-${label.replace(/\s/g, '-')}.jpg`
-          );
-          closeReportView();
-        }).catch(err => {
-          console.error(err);
-          showToast('שגיאה ביצירת תמונת הלוח שנה');
-        });
-      }, 350);
+      waitForRenderReady(el).then(() => {
+        return html2pdf().set({
+          html2canvas: {
+            scale: 2, useCORS: true,
+            windowWidth: Math.max(document.documentElement.scrollWidth, el.scrollWidth),
+            scrollX: 0, scrollY: 0,
+            ignoreElements: (e) => e.classList && e.classList.contains('no-print')
+          }
+        }).from(el).toCanvas();
+      }).then(canvas => {
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        const base64 = dataUrl.split(',')[1];
+        sendEmailWithAttachment(
+          `FamilyCent - לוח שנה פיננסי (${label})`,
+          bodyText,
+          base64,
+          `לוח-שנה-${label.replace(/\s/g, '-')}.jpg`
+        );
+        closeReportView();
+      }).catch(err => {
+        console.error(err);
+        showToast('שגיאה ביצירת תמונת הלוח שנה');
+      });
     }
 
     function emailCalendarDirect() {
@@ -2386,7 +2527,7 @@
     function downloadCalendarPDFDirect() {
       const label = document.getElementById('calendarMonthLabel').innerText;
       printFinancialCalendar();
-      setTimeout(() => downloadReportPDF(`לוח-שנה-${label.replace(/\s/g, '-')}.pdf`), 350);
+      setTimeout(() => downloadReportPDF(`לוח-שנה-${label.replace(/\s/g, '-')}.pdf`, 'landscape'), 200);
     }
     /* --- סוף לוח שנה פיננסי --- */
 
