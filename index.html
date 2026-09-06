@@ -427,6 +427,7 @@
           <button id="btnTabReports" onclick="switchTab('reports')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">📋 ארכיון דוחות אישיים</button>
           <button id="btnTabBudgets" onclick="switchTab('budgets')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">🎯 תקציבים ויעדים</button>
           <button id="btnTabCalendar" onclick="switchTab('calendar')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">📅 לוח שנה פיננסי</button>
+          <button id="btnTabCards" onclick="switchTab('cards')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">💳 כרטיסי אשראי</button>
           
           <!-- כפתור ניווט למנהל בלבד -->
           <button id="btnTabAdmin" onclick="switchTab('admin')" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-amber-400 hover:text-amber-300 hidden">🔑 פאנל מנהל מערכת</button>
@@ -739,6 +740,40 @@
         </div>
       </div>
 
+      <!-- לשונית: כרטיסי אשראי -->
+      <div id="tabContentCards" class="tab-content">
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md">
+          <div class="flex justify-between items-start gap-2 mb-1">
+            <div>
+              <h2 class="text-xl font-bold text-slate-900">💳 כרטיסי אשראי</h2>
+              <p class="text-[11px] text-slate-400">מעקב אחר מסגרת אשראי, חיוב נוכחי ותאריך סגירה לכל כרטיס</p>
+            </div>
+            <button onclick="toggleAddCreditCardForm()" class="w-9 h-9 shrink-0 flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-xl font-bold transition" title="הוסף כרטיס">+</button>
+          </div>
+          <div id="addCreditCardForm" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 mt-3 space-y-2">
+            <div class="grid grid-cols-2 gap-2">
+              <input type="text" id="newCardNameInput" placeholder="שם הכרטיס (למשל: ויזה כאל)" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-sm">
+              <input type="text" id="newCardLast4Input" maxlength="4" placeholder="4 ספרות אחרונות" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-sm" style="direction:ltr;">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[11px] text-slate-500">מסגרת אשראי חודשית</label>
+                <input type="number" id="newCardLimitInput" placeholder="לדוגמה: 8000" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-sm">
+              </div>
+              <div>
+                <label class="text-[11px] text-slate-500">יום סגירת מחזור בחודש (1-31)</label>
+                <input type="number" id="newCardClosingDayInput" min="1" max="31" placeholder="לדוגמה: 10" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-sm">
+              </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-1">
+              <button onclick="toggleAddCreditCardForm()" class="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">ביטול</button>
+              <button onclick="saveNewCreditCard()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap">שמור כרטיס</button>
+            </div>
+          </div>
+          <div id="creditCardsList" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+        </div>
+      </div>
+
       <!-- לשונית ג: פאנל מנהל מערכת -->
       <div id="tabContentAdmin" class="tab-content">
         <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md mb-6">
@@ -987,6 +1022,12 @@
         <label class="block text-sm font-semibold text-slate-700 mb-1">תיאור / עסק</label>
         <input id="descriptionInput" type="text" placeholder="למשל: סופר, משכורת, דלק..." class="w-full px-4 py-2.5 border border-slate-300 rounded-xl">
       </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">שיוך לכרטיס אשראי (אופציונלי)</label>
+        <select id="cardAssignInput" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl bg-white">
+          <option value="">ללא שיוך לכרטיס (מזומן / העברה)</option>
+        </select>
+      </div>
       <div id="recurringOptionWrapper" class="flex items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
         <input type="checkbox" id="isRecurringInput" class="w-4 h-4 text-indigo-600 rounded">
         <label for="isRecurringInput" class="text-xs font-semibold text-slate-700 flex-1">🔁 הפוך לפעולה קבועה (תחזור אוטומטית כל חודש)</label>
@@ -1118,7 +1159,7 @@
         localTransactions = data.map(t => ({
           id: t.id, actionType: t.action_type, amount: t.amount,
           description: t.description, category: t.category, notes: t.notes,
-          timestamp: t.occurred_at
+          timestamp: t.occurred_at, cardId: t.card_id || null
         }));
       }
       updateUI();
@@ -1216,6 +1257,121 @@
       userGoalRows = userGoalRows.filter(g => g.id !== id);
       renderSavingsGoals();
     }
+
+    /* --- כרטיסי אשראי: נשמר ב-Supabase --- */
+    let userCreditCardRows = [];
+    async function loadUserCreditCards() {
+      const { data, error } = await sb.from('credit_cards').select('*').eq('user_id', currentUserId).order('created_at');
+      if (error) { console.error(error); userCreditCardRows = []; return; }
+      userCreditCardRows = data;
+    }
+
+    function toggleAddCreditCardForm() {
+      document.getElementById('addCreditCardForm').classList.toggle('hidden');
+    }
+
+    async function saveNewCreditCard() {
+      const name = document.getElementById('newCardNameInput').value.trim();
+      const last4 = document.getElementById('newCardLast4Input').value.trim();
+      const limit = parseFloat(document.getElementById('newCardLimitInput').value);
+      const closingDay = parseInt(document.getElementById('newCardClosingDayInput').value, 10);
+
+      if (!name) { showToast('אנא הזינו שם לכרטיס.'); return; }
+      if (!limit || limit <= 0) { showToast('אנא הזינו מסגרת אשראי תקינה.'); return; }
+      if (!closingDay || closingDay < 1 || closingDay > 31) { showToast('אנא הזינו יום סגירת מחזור תקין (1-31).'); return; }
+
+      const { data, error } = await sb.from('credit_cards').insert({
+        user_id: currentUserId, card_name: name, last4: last4 || null,
+        credit_limit: limit, closing_day: closingDay
+      }).select().single();
+      if (error) { console.error(error); showToast('שגיאה בשמירת הכרטיס.'); return; }
+
+      userCreditCardRows.push(data);
+      document.getElementById('newCardNameInput').value = '';
+      document.getElementById('newCardLast4Input').value = '';
+      document.getElementById('newCardLimitInput').value = '';
+      document.getElementById('newCardClosingDayInput').value = '';
+      toggleAddCreditCardForm();
+      renderCreditCards();
+      populateCardAssignDropdown();
+    }
+
+    async function deleteCreditCard(id) {
+      if (!confirm('למחוק כרטיס זה? תנועות ששויכו אליו יישארו, אך יאבדו את השיוך.')) return;
+      const { error } = await sb.from('credit_cards').delete().eq('id', id);
+      if (error) { console.error(error); showToast('שגיאה במחיקת הכרטיס.'); return; }
+      userCreditCardRows = userCreditCardRows.filter(c => c.id !== id);
+      renderCreditCards();
+      populateCardAssignDropdown();
+    }
+
+    /* מחשב את טווח מחזור החיוב הנוכחי (מיום הסגירה הקודם ועד יום הסגירה הבא), לפי יום הסגירה שהוגדר לכרטיס */
+    function getCurrentCardCycleRange(closingDay) {
+      const now = new Date();
+      let cycleEnd = new Date(now.getFullYear(), now.getMonth(), closingDay, 23, 59, 59);
+      if (now.getDate() > closingDay) {
+        cycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, closingDay, 23, 59, 59);
+      }
+      const cycleStart = new Date(cycleEnd.getFullYear(), cycleEnd.getMonth() - 1, closingDay + 1, 0, 0, 0);
+      return { cycleStart, cycleEnd };
+    }
+
+    function renderCreditCards() {
+      const container = document.getElementById('creditCardsList');
+      if (!container) return;
+      if (userCreditCardRows.length === 0) {
+        container.innerHTML = `<p class="text-sm text-slate-400 col-span-2 text-center py-6">עדיין לא הוספתם כרטיסי אשראי. לחצו על "+" כדי להתחיל לעקוב.</p>`;
+        return;
+      }
+
+      container.innerHTML = userCreditCardRows.map(card => {
+        const { cycleStart, cycleEnd } = getCurrentCardCycleRange(card.closing_day);
+        const used = localTransactions
+          .filter(t => t.cardId === card.id && t.actionType && t.actionType.includes('הוצאה'))
+          .filter(t => { const d = new Date(t.timestamp); return d >= cycleStart && d <= cycleEnd; })
+          .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+
+        const limit = parseFloat(card.credit_limit) || 0;
+        const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+        const barColor = pct >= 90 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-500' : 'bg-indigo-500';
+        const daysToClosing = Math.ceil((cycleEnd - new Date()) / (1000 * 60 * 60 * 24));
+
+        return `
+          <div class="border border-slate-200 rounded-2xl p-4 relative">
+            <button onclick="deleteCreditCard('${card.id}')" class="absolute top-3 left-3 text-slate-300 hover:text-rose-600 transition text-sm" title="מחק כרטיס">🗑️</button>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-2xl">💳</span>
+              <div>
+                <div class="font-bold text-slate-900">${card.card_name}</div>
+                ${card.last4 ? `<div class="text-[11px] text-slate-400" style="direction:ltr; text-align:right;">•••• ${card.last4}</div>` : ''}
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="flex justify-between text-xs text-slate-500 mb-1">
+                <span>חיוב מחזור נוכחי: <b class="text-slate-800">${currentUserCurrency}${used.toLocaleString()}</b></span>
+                <span>מתוך ${currentUserCurrency}${limit.toLocaleString()}</span>
+              </div>
+              <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                <div class="${barColor} h-2.5 rounded-full transition-all" style="width:${pct}%"></div>
+              </div>
+            </div>
+            <div class="text-[11px] text-slate-400 mt-2">
+              🗓️ סגירת מחזור ביום ${card.closing_day} לחודש
+              ${daysToClosing >= 0 ? `(בעוד ${daysToClosing} ימים)` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /* ממלא את רשימת הכרטיסים בטופס הוספת/עריכת תנועה, כדי לאפשר שיוך התנועה לכרטיס (לא חובה) */
+    function populateCardAssignDropdown() {
+      const select = document.getElementById('cardAssignInput');
+      if (!select) return;
+      select.innerHTML = '<option value="">ללא שיוך לכרטיס (מזומן / העברה)</option>' +
+        userCreditCardRows.map(c => `<option value="${c.id}">💳 ${c.card_name}${c.last4 ? ' •••• ' + c.last4 : ''}</option>`).join('');
+    }
+    /* --- סוף כרטיסי אשראי --- */
 
     /* --- פעולות קבועות (חוזרות): נשמר ב-Supabase --- */
     let userRecurringRows = [];
@@ -1656,10 +1812,10 @@
           jsPDF: { unit: 'in', format: 'a4', orientation: orientation || 'portrait' },
           pagebreak: { mode: ['css', 'legacy'] }
         };
-        html2pdf().set(opt).from(el).save();
+        return html2pdf().set(opt).from(el).save();
       }).catch(err => {
         console.error(err);
-        showToast('שגיאה ביצירת קובץ ה-PDF');
+        showToast('שגיאה ביצירת קובץ ה-PDF: ' + (err && err.message ? err.message : err));
       });
     }
 
@@ -2504,7 +2660,12 @@
             ignoreElements: (e) => e.classList && e.classList.contains('no-print')
           }
         }).from(el).toCanvas();
-      }).then(canvas => {
+      }).then(canvasResult => {
+        // בגרסאות מסוימות של html2pdf.js toCanvas() עשוי להחזיר מערך במקום קנבס בודד - נתמוך בשתי האפשרויות
+        const canvas = Array.isArray(canvasResult) ? canvasResult[0] : canvasResult;
+        if (!canvas || typeof canvas.toDataURL !== 'function') {
+          throw new Error('לא הצלחנו לייצר את תמונת הלוח (קנבס ריק)');
+        }
         const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
         const base64 = dataUrl.split(',')[1];
         sendEmailWithAttachment(
@@ -2516,7 +2677,7 @@
         closeReportView();
       }).catch(err => {
         console.error(err);
-        showToast('שגיאה ביצירת תמונת הלוח שנה');
+        showToast('שגיאה ביצירת תמונת הלוח שנה: ' + (err && err.message ? err.message : err));
       });
     }
 
@@ -2635,6 +2796,7 @@
       document.getElementById('btnTabReports').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
       document.getElementById('btnTabBudgets').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
       document.getElementById('btnTabCalendar').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
+      document.getElementById('btnTabCards').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white";
       document.getElementById('btnTabAdmin').className = "w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-amber-400 hover:text-amber-300";
 
       /* הכפתור הצף להוספת פעולה רלוונטי רק בלוח הבקרה הראשי */
@@ -2655,6 +2817,10 @@
         document.getElementById('tabContentCalendar').classList.add('active');
         document.getElementById('btnTabCalendar').className = "w-full text-right px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md transition flex items-center gap-2";
         renderFinancialCalendar();
+      } else if (tabName === 'cards') {
+        document.getElementById('tabContentCards').classList.add('active');
+        document.getElementById('btnTabCards').className = "w-full text-right px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md transition flex items-center gap-2";
+        renderCreditCards();
       } else if (tabName === 'admin') {
         document.getElementById('tabContentAdmin').classList.add('active');
         document.getElementById('btnTabAdmin').className = "w-full text-right px-4 py-3 rounded-xl bg-amber-600 text-slate-900 font-bold shadow-md transition flex items-center gap-2";
@@ -2791,6 +2957,8 @@
       document.getElementById('isRecurringInput').checked = false;
       document.getElementById('recurringDayInput').value = 1;
       document.getElementById('recurringOptionWrapper').classList.remove('hidden');
+      const cardSelectEl = document.getElementById('cardAssignInput');
+      if (cardSelectEl) cardSelectEl.value = '';
       document.getElementById('expenseModal').classList.remove('hidden'); 
     }
     
@@ -2814,6 +2982,8 @@
       await loadUserGoals();
       await loadUserRecurring();
       await loadUserReports();
+      await loadUserCreditCards();
+      populateCardAssignDropdown();
 
       document.getElementById('navFamilyName').innerText = (profile && profile.family_name) || 'משפחת ישראלי';
       document.querySelectorAll('.currencySymbol').forEach(el => el.innerText = currentUserCurrency);
@@ -3190,18 +3360,20 @@
       const description = document.getElementById('descriptionInput').value.trim();
       const category = document.getElementById('categoryInput').value;
       const notes = document.getElementById('notesInput').value.trim();
+      const cardSelectEl = document.getElementById('cardAssignInput');
+      const cardId = cardSelectEl && cardSelectEl.value ? cardSelectEl.value : null;
 
       if (!amount || !description) { showToast('בבקשה מלאו סכום ותיאור לפעולה'); return; }
 
       if (editingTransactionId) {
         const { error } = await sb.from('transactions')
-          .update({ action_type: actionType, amount, description, category, notes })
+          .update({ action_type: actionType, amount, description, category, notes, card_id: cardId })
           .eq('id', editingTransactionId);
         if (error) { console.error(error); showToast('שגיאה בעדכון הפעולה. נסו שוב.'); return; }
         showToast('הפעולה עודכנה בהצלחה');
       } else {
         const { error } = await sb.from('transactions').insert({
-          user_id: currentUserId, action_type: actionType, amount, description, category, notes
+          user_id: currentUserId, action_type: actionType, amount, description, category, notes, card_id: cardId
         });
         if (error) { console.error(error); showToast('שגיאה בשמירת הפעולה. נסו שוב.'); return; }
 
@@ -3219,11 +3391,13 @@
       }
 
       await loadTransactionsLocal();
+      renderCreditCards();
       closeModal();
       
       document.getElementById('amountInput').value = '';
       document.getElementById('descriptionInput').value = '';
       document.getElementById('notesInput').value = '';
+      if (cardSelectEl) cardSelectEl.value = '';
       editingTransactionId = null;
     }
 
@@ -3237,6 +3411,8 @@
       document.getElementById('amountInput').value = tx.amount;
       document.getElementById('descriptionInput').value = tx.description;
       document.getElementById('notesInput').value = tx.notes || '';
+      const cardSelectEl = document.getElementById('cardAssignInput');
+      if (cardSelectEl) cardSelectEl.value = tx.cardId || '';
       if (customCategories.includes(tx.category)) {
         document.getElementById('categoryInput').value = tx.category;
       }
