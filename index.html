@@ -1804,9 +1804,7 @@
           filename: filename || 'FamilyCent-Report.pdf',
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: {
-            scale: 2, useCORS: true,
-            windowWidth: Math.max(document.documentElement.scrollWidth, el.scrollWidth),
-            scrollX: 0, scrollY: 0,
+            scale: 2, useCORS: true, backgroundColor: '#ffffff',
             ignoreElements: (e) => e.classList && e.classList.contains('no-print')
           },
           jsPDF: { unit: 'in', format: 'a4', orientation: orientation || 'portrait' },
@@ -1836,15 +1834,16 @@
           filename: filename || 'FamilyCent.pdf',
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: {
-            scale: 2, useCORS: true,
-            windowWidth: Math.max(document.documentElement.scrollWidth, el.scrollWidth),
-            scrollX: 0, scrollY: 0,
+            scale: 2, useCORS: true, backgroundColor: '#ffffff',
             ignoreElements: (e) => e.classList && e.classList.contains('no-print')
           },
           jsPDF: { unit: 'in', format: 'a4', orientation: orientation || 'portrait' },
           pagebreak: { mode: ['css', 'legacy'] }
         };
-        return html2pdf().set(opt).from(el).outputPdf('datauristring').then(dataUri => dataUri.split(',')[1]);
+        return html2pdf().set(opt).from(el).outputPdf('datauristring').then(dataUri => {
+          if (!dataUri || dataUri.length < 100) throw new Error('לא הצלחנו לייצר PDF (קובץ ריק)');
+          return dataUri.split(',')[1];
+        });
       });
     }
     /* --- סוף הורדת PDF --- */
@@ -2588,12 +2587,33 @@
       if (existing) existing.remove();
     }
 
+    /* --- יוצר "עותק צילום" נקי ומבודד של לוח השנה, מחוץ למסך (לא fixed, לא מוסתר) - נמנע מבעיות קנבס ריק שנגרמות מ-position:fixed --- */
+    function buildCalendarCaptureNode() {
+      const grid = document.getElementById('calendarGrid');
+      const label = document.getElementById('calendarMonthLabel').innerText;
+      const node = document.createElement('div');
+      node.id = 'calendarCaptureNode';
+      node.style.cssText = 'position:absolute; top:0; left:-99999px; width:1200px; background:#ffffff; padding:32px; direction:rtl; font-family:Assistant,Arial,sans-serif; color:#0f172a;';
+      node.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #4f46e5;padding-bottom:12px;margin-bottom:20px;">
+          <h1 style="font-size:24px;font-weight:900;color:#4f46e5;margin:0;">FamilyCent - לוח שנה פיננסי</h1>
+          <p style="font-size:14px;color:#475569;margin:0;">${label}</p>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;text-align:center;font-size:12px;font-weight:700;color:#94a3b8;margin-bottom:8px;">
+          <div>א</div><div>ב</div><div>ג</div><div>ד</div><div>ה</div><div>ו</div><div>ש</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;">${grid.innerHTML}</div>
+      `;
+      document.body.appendChild(node);
+      return node;
+    }
+
     function printFinancialCalendar() {
       const grid = document.getElementById('calendarGrid');
       if (!grid) return;
       const label = document.getElementById('calendarMonthLabel').innerText;
       const reportArea = document.getElementById('printReportArea');
-      // גרסה רחבה (לרוחב) של הלוח - לשימוש בהדפסה, PDF ותמונה למייל. הרוחב מוגבל ל-100% של המכל, כדי למנוע חיתוך/דפים ריקים בגלישה מחוץ למסך.
+      // גרסה רחבה (לרוחב) של הלוח - לתצוגה על המסך ולהדפסה בלבד. תמונה/PDF שנשלחים אוטומטית נבנים בנפרד (ראו buildCalendarCaptureNode), כדי להימנע מבעיות צילום עם position:fixed.
       reportArea.innerHTML = `
         <div id="calendarWideWrap" class="w-full text-right" dir="rtl" style="font-family: 'Assistant', sans-serif;">
           <div class="no-print mb-6 flex justify-end gap-2 flex-wrap">
@@ -2648,22 +2668,16 @@
 
       const bodyText = `לוח שנה פיננסי - ${label}\n\nסה"כ הכנסות: ${currentUserCurrency}${totalIncome.toLocaleString()}\nסה"כ הוצאות: ${currentUserCurrency}${totalExpense.toLocaleString()}\n\nכל התנועות של החודש:\n${lines.join('\n')}\n\n(תמונה מלאה של הלוח מצורפת להודעה זו)`;
 
-      printFinancialCalendar();
-      const el = document.getElementById('printReportArea');
       showToast('מכין תמונה של לוח השנה...');
-      waitForRenderReady(el).then(() => {
+      const node = buildCalendarCaptureNode();
+      waitForRenderReady(node).then(() => {
         return html2pdf().set({
-          html2canvas: {
-            scale: 2, useCORS: true,
-            windowWidth: Math.max(document.documentElement.scrollWidth, el.scrollWidth),
-            scrollX: 0, scrollY: 0,
-            ignoreElements: (e) => e.classList && e.classList.contains('no-print')
-          }
-        }).from(el).toCanvas();
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }
+        }).from(node).toCanvas();
       }).then(canvasResult => {
         // בגרסאות מסוימות של html2pdf.js toCanvas() עשוי להחזיר מערך במקום קנבס בודד - נתמוך בשתי האפשרויות
         const canvas = Array.isArray(canvasResult) ? canvasResult[0] : canvasResult;
-        if (!canvas || typeof canvas.toDataURL !== 'function') {
+        if (!canvas || typeof canvas.toDataURL !== 'function' || canvas.width === 0 || canvas.height === 0) {
           throw new Error('לא הצלחנו לייצר את תמונת הלוח (קנבס ריק)');
         }
         const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
@@ -2674,10 +2688,11 @@
           base64,
           `לוח-שנה-${label.replace(/\s/g, '-')}.jpg`
         );
-        closeReportView();
       }).catch(err => {
         console.error(err);
         showToast('שגיאה ביצירת תמונת הלוח שנה: ' + (err && err.message ? err.message : err));
+      }).finally(() => {
+        if (node && node.parentNode) node.parentNode.removeChild(node);
       });
     }
 
@@ -2687,8 +2702,24 @@
 
     function downloadCalendarPDFDirect() {
       const label = document.getElementById('calendarMonthLabel').innerText;
-      printFinancialCalendar();
-      setTimeout(() => downloadReportPDF(`לוח-שנה-${label.replace(/\s/g, '-')}.pdf`, 'landscape'), 200);
+      showToast('מכין את קובץ ה-PDF...');
+      const node = buildCalendarCaptureNode();
+      waitForRenderReady(node).then(() => {
+        const opt = {
+          margin: 0.3,
+          filename: `לוח-שנה-${label.replace(/\s/g, '-')}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+          jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' },
+          pagebreak: { mode: ['css', 'legacy'] }
+        };
+        return html2pdf().set(opt).from(node).save();
+      }).catch(err => {
+        console.error(err);
+        showToast('שגיאה ביצירת קובץ ה-PDF: ' + (err && err.message ? err.message : err));
+      }).finally(() => {
+        if (node && node.parentNode) node.parentNode.removeChild(node);
+      });
     }
     /* --- סוף לוח שנה פיננסי --- */
 
