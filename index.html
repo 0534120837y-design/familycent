@@ -1793,30 +1793,6 @@
       }, 350);
     }
 
-    /* --- הורדת דוח כקובץ PDF --- */
-    function downloadReportPDF(filename, orientation) {
-      const el = document.getElementById('printReportArea');
-      if (!el) return;
-      showToast('מכין את קובץ ה-PDF...');
-      waitForRenderReady(el).then(() => {
-        const opt = {
-          margin: 0.3,
-          filename: filename || 'FamilyCent-Report.pdf',
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2, useCORS: true, backgroundColor: '#ffffff',
-            ignoreElements: (e) => e.classList && e.classList.contains('no-print')
-          },
-          jsPDF: { unit: 'in', format: 'a4', orientation: orientation || 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] }
-        };
-        return html2pdf().set(opt).from(el).save();
-      }).catch(err => {
-        console.error(err);
-        showToast('שגיאה ביצירת קובץ ה-PDF: ' + (err && err.message ? err.message : err));
-      });
-    }
-
     /* --- ממתין לטעינת גופנים + ריצת ה-DOM לפני צילום/ייצוא, כדי למנוע עמודים ריקים/חתוכים --- */
     function waitForRenderReady(el) {
       const fontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
@@ -1826,24 +1802,72 @@
       }));
     }
 
+    /* --- צילום אלמנט לקנבס, ישירות דרך html2canvas (לא דרך המעטפת של html2pdf.js, ששכפול ה-DOM שלה ידוע כבאגי ולעיתים מפיק קנבס ריק) --- */
+    function captureNodeToCanvas(el) {
+      return waitForRenderReady(el).then(() => {
+        const engine = window.html2canvas || (window.html2pdf && window.html2pdf.html2canvas);
+        if (!engine) throw new Error('ספריית html2canvas לא נטענה בדף');
+        return engine(el, {
+          scale: 2, useCORS: true, backgroundColor: '#ffffff',
+          ignoreElements: (e) => e.classList && e.classList.contains('no-print')
+        });
+      }).then(canvas => {
+        if (!canvas || typeof canvas.toDataURL !== 'function' || !canvas.width || !canvas.height) {
+          throw new Error('לא הצלחנו לצלם את התוכן (קנבס ריק)');
+        }
+        return canvas;
+      });
+    }
+
+    /* --- בונה PDF (עם חלוקה לעמודים אם צריך) מקנבס בודד, באמצעות jsPDF ישירות --- */
+    function canvasToPdf(canvas, orientation) {
+      const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      if (!jsPDFCtor) throw new Error('ספריית jsPDF לא נטענה בדף');
+      const pdf = new jsPDFCtor({ unit: 'pt', format: 'a4', orientation: orientation || 'portrait' });
+      const margin = 20;
+      const pageWidth = pdf.internal.pageSize.getWidth() - margin * 2;
+      const pageHeight = pdf.internal.pageSize.getHeight() - margin * 2;
+      const scale = pageWidth / canvas.width;
+      const pageHeightPx = pageHeight / scale;
+
+      let renderedPx = 0;
+      let firstPage = true;
+      while (renderedPx < canvas.height) {
+        const sliceHeightPx = Math.min(pageHeightPx, canvas.height - renderedPx);
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceHeightPx;
+        pageCanvas.getContext('2d').drawImage(canvas, 0, renderedPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
+        const sliceData = pageCanvas.toDataURL('image/jpeg', 0.95);
+        if (!firstPage) pdf.addPage();
+        pdf.addImage(sliceData, 'JPEG', margin, margin, pageWidth, sliceHeightPx * scale);
+        renderedPx += sliceHeightPx;
+        firstPage = false;
+      }
+      return pdf;
+    }
+
+    /* --- הורדת דוח כקובץ PDF --- */
+    function downloadReportPDF(filename, orientation) {
+      const el = document.getElementById('printReportArea');
+      if (!el) return;
+      showToast('מכין את קובץ ה-PDF...');
+      captureNodeToCanvas(el).then(canvas => {
+        const pdf = canvasToPdf(canvas, orientation);
+        pdf.save(filename || 'FamilyCent-Report.pdf');
+      }).catch(err => {
+        console.error(err);
+        showToast('שגיאה ביצירת קובץ ה-PDF: ' + (err && err.message ? err.message : err));
+      });
+    }
+
     /* --- מייצר PDF של אלמנט ומחזיר אותו כ-base64 (בלי צילום מסך, לצירוף במייל) --- */
     function getElementPdfBase64(el, orientation, filename) {
-      return waitForRenderReady(el).then(() => {
-        const opt = {
-          margin: 0.3,
-          filename: filename || 'FamilyCent.pdf',
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2, useCORS: true, backgroundColor: '#ffffff',
-            ignoreElements: (e) => e.classList && e.classList.contains('no-print')
-          },
-          jsPDF: { unit: 'in', format: 'a4', orientation: orientation || 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] }
-        };
-        return html2pdf().set(opt).from(el).outputPdf('datauristring').then(dataUri => {
-          if (!dataUri || dataUri.length < 100) throw new Error('לא הצלחנו לייצר PDF (קובץ ריק)');
-          return dataUri.split(',')[1];
-        });
+      return captureNodeToCanvas(el).then(canvas => {
+        const pdf = canvasToPdf(canvas, orientation);
+        const dataUri = pdf.output('datauristring');
+        if (!dataUri || dataUri.length < 100) throw new Error('לא הצלחנו לייצר PDF (קובץ ריק)');
+        return dataUri.split(',')[1];
       });
     }
     /* --- סוף הורדת PDF --- */
@@ -2670,16 +2694,7 @@
 
       showToast('מכין תמונה של לוח השנה...');
       const node = buildCalendarCaptureNode();
-      waitForRenderReady(node).then(() => {
-        return html2pdf().set({
-          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }
-        }).from(node).toCanvas();
-      }).then(canvasResult => {
-        // בגרסאות מסוימות של html2pdf.js toCanvas() עשוי להחזיר מערך במקום קנבס בודד - נתמוך בשתי האפשרויות
-        const canvas = Array.isArray(canvasResult) ? canvasResult[0] : canvasResult;
-        if (!canvas || typeof canvas.toDataURL !== 'function' || canvas.width === 0 || canvas.height === 0) {
-          throw new Error('לא הצלחנו לייצר את תמונת הלוח (קנבס ריק)');
-        }
+      captureNodeToCanvas(node).then(canvas => {
         const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
         const base64 = dataUrl.split(',')[1];
         sendEmailWithAttachment(
@@ -2704,16 +2719,9 @@
       const label = document.getElementById('calendarMonthLabel').innerText;
       showToast('מכין את קובץ ה-PDF...');
       const node = buildCalendarCaptureNode();
-      waitForRenderReady(node).then(() => {
-        const opt = {
-          margin: 0.3,
-          filename: `לוח-שנה-${label.replace(/\s/g, '-')}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-          jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' },
-          pagebreak: { mode: ['css', 'legacy'] }
-        };
-        return html2pdf().set(opt).from(node).save();
+      captureNodeToCanvas(node).then(canvas => {
+        const pdf = canvasToPdf(canvas, 'landscape');
+        pdf.save(`לוח-שנה-${label.replace(/\s/g, '-')}.pdf`);
       }).catch(err => {
         console.error(err);
         showToast('שגיאה ביצירת קובץ ה-PDF: ' + (err && err.message ? err.message : err));
