@@ -15,7 +15,8 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <style>
     body { font-family: 'Assistant', sans-serif; }
     .page { display: none !important; }
@@ -1786,7 +1787,7 @@
           closeReportView();
         }).catch(err => {
           console.error(err);
-          showToast('לא הצלחנו לצרף PDF, שולח כטקסט בלבד...');
+          showToast('לא הצלחנו לצרף PDF (' + (err && err.message ? err.message : err) + '), שולח כטקסט בלבד...');
           sendEmail(subject, text);
           closeReportView();
         });
@@ -1805,7 +1806,7 @@
     /* --- צילום אלמנט לקנבס, ישירות דרך html2canvas (לא דרך המעטפת של html2pdf.js, ששכפול ה-DOM שלה ידוע כבאגי ולעיתים מפיק קנבס ריק) --- */
     function captureNodeToCanvas(el) {
       return waitForRenderReady(el).then(() => {
-        const engine = window.html2canvas || (window.html2pdf && window.html2pdf.html2canvas);
+        const engine = window.html2canvas;
         if (!engine) throw new Error('ספריית html2canvas לא נטענה בדף');
         return engine(el, {
           scale: 2, useCORS: true, backgroundColor: '#ffffff',
@@ -1892,7 +1893,7 @@
           closeReportView();
         }).catch(err => {
           console.error(err);
-          showToast('לא הצלחנו לצרף PDF, שולח את תוכן הדוח כטקסט בלבד...');
+          showToast('לא הצלחנו לצרף PDF (' + (err && err.message ? err.message : err) + '), שולח את תוכן הדוח כטקסט בלבד...');
           sendEmail(subject, bodyText);
           closeReportView();
         });
@@ -2613,11 +2614,18 @@
 
     /* --- יוצר "עותק צילום" נקי ומבודד של לוח השנה, מחוץ למסך (לא fixed, לא מוסתר) - נמנע מבעיות קנבס ריק שנגרמות מ-position:fixed --- */
     function buildCalendarCaptureNode() {
+      const existing = document.getElementById('calendarCaptureNode');
+      if (existing) existing.remove();
+
       const grid = document.getElementById('calendarGrid');
+      if (!grid || !grid.innerHTML.trim()) {
+        throw new Error('לוח השנה עדיין לא נטען - פתחו קודם את לשונית "לוח שנה פיננסי"');
+      }
       const label = document.getElementById('calendarMonthLabel').innerText;
       const node = document.createElement('div');
       node.id = 'calendarCaptureNode';
-      node.style.cssText = 'position:absolute; top:0; left:-99999px; width:1200px; background:#ffffff; padding:32px; direction:rtl; font-family:Assistant,Arial,sans-serif; color:#0f172a;';
+      // ממוקם בפועל על גבי המסך (לא מחוץ לגבולות) כדי למנוע בעיות ידועות של html2canvas עם אלמנטים הרחק מחוץ לתצוגה. מוצג לרגע קצר בזמן הצילום בלבד.
+      node.style.cssText = 'position:fixed; top:0; left:0; width:1200px; background:#ffffff; padding:32px; direction:rtl; font-family:Assistant,Arial,sans-serif; color:#0f172a; z-index:999999;';
       node.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #4f46e5;padding-bottom:12px;margin-bottom:20px;">
           <h1 style="font-size:24px;font-weight:900;color:#4f46e5;margin:0;">FamilyCent - לוח שנה פיננסי</h1>
