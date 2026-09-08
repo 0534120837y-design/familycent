@@ -2055,6 +2055,7 @@
       captureNodeToCanvas(el).then(canvas => {
         const pdf = canvasToPdf(canvas, orientation);
         pdf.save(filename || 'FamilyCent-Report.pdf');
+        closeReportView();
       }).catch(err => {
         console.error(err);
         showToast('שגיאה ביצירת קובץ ה-PDF: ' + (err && err.message ? err.message : err));
@@ -2903,10 +2904,12 @@
         const dataUri = pdf.output('datauristring');
         const base64 = dataUri.split(',')[1];
         sendEmailWithAttachment(subject, `לוח שנה פיננסי - ${label}. פתחו את המייל כדי לראות את הלוח המלא, או את קובץ ה-PDF המצורף.`, base64, `לוח-שנה-${label.replace(/\s/g, '-')}.pdf`, bodyHtml);
+        closeReportView();
       }).catch(err => {
         console.error(err);
         showToast('לא הצלחנו לצרף PDF (' + (err && err.message ? err.message : err) + '), שולח כתוכן מעוצב בלבד...');
         sendEmail(subject, `לוח שנה פיננסי - ${label}`, bodyHtml);
+        closeReportView();
       }).finally(() => {
         if (node && node.parentNode) node.parentNode.removeChild(node);
       });
@@ -2923,6 +2926,7 @@
       captureNodeToCanvas(node).then(canvas => {
         const pdf = canvasToPdf(canvas, 'landscape');
         pdf.save(`לוח-שנה-${label.replace(/\s/g, '-')}.pdf`);
+        closeReportView();
       }).catch(err => {
         console.error(err);
         showToast('שגיאה ביצירת קובץ ה-PDF: ' + (err && err.message ? err.message : err));
@@ -4036,6 +4040,7 @@
           <div class="no-print mb-6 flex justify-end gap-2">
             <button onclick="downloadReportPDF('${rep.reportName.replace(/[^\w\s-]/g, '')}.pdf')" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition">⬇️ הורד PDF</button>
             <button onclick="emailArchivedReport('${rep.id}')" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח דוח זה במייל</button>
+            <button onclick="window.print()" class="px-5 py-2 bg-violet-600 text-white font-bold rounded-xl shadow-md hover:bg-violet-700 transition">🖨️ הדפסה</button>
             <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור וחזור למערכת</button>
           </div>
           <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-3 mb-6">
@@ -4088,7 +4093,6 @@
       `;
       
       reportArea.classList.remove('hidden');
-      window.print();
     }
 
     async function deleteArchivedReport(reportId) {
@@ -4118,6 +4122,7 @@
           <div class="no-print mb-6 flex justify-end gap-2">
             <button onclick="downloadReportPDF('${title.replace(/[^\w\s-]/g, '')}.pdf')" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition">⬇️ הורד PDF</button>
             <button onclick="emailArchivedReport(null, true)" class="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">📧 שלח דוח זה במייל</button>
+            <button onclick="window.print()" class="px-5 py-2 bg-violet-600 text-white font-bold rounded-xl shadow-md hover:bg-violet-700 transition">🖨️ הדפסה</button>
             <button onclick="closeReportView()" class="px-5 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-900 transition">✕ סגור וחזור למערכת</button>
           </div>
           <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-3 mb-6">
@@ -4143,8 +4148,7 @@
             </div>
           </div>
         </div>`;
-      reportArea.classList.remove('hidden'); 
-      window.print(); 
+      reportArea.classList.remove('hidden');
     }
   </script>
 </body>
