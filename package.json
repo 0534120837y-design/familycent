@@ -1,0 +1,10 @@
+{
+  "name": "familycent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FamilyCent - אפליקציית ניהול תקציב משפחתי",
+  "dependencies": {
+    "puppeteer-core": "^23.9.0",
+    "@sparticuz/chromium-min": "^131.0.1"
+  }
+}
