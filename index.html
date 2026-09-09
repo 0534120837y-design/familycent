@@ -945,6 +945,17 @@
             <button type="button" id="toggleProfilePassword" class="absolute left-2 top-7 text-xs focus:outline-none">👁️</button>
           </div>
         </div>
+        <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3 mt-3">
+          <div>
+            <div class="text-sm font-semibold text-slate-800">📧 דוח חודשי אוטומטי במייל</div>
+            <div class="text-[11px] text-slate-400">קבלת סיכום מעוצב + PDF בתחילת כל חודש, על החודש שהסתיים</div>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="profileMonthlyReportToggle" class="sr-only peer">
+            <div class="w-11 h-6 bg-slate-300 rounded-full peer-checked:bg-indigo-600 transition-colors"></div>
+            <div class="absolute top-0.5 right-0.5 bg-white w-5 h-5 rounded-full transition-transform peer-checked:-translate-x-5"></div>
+          </label>
+        </div>
       </div>
       <div class="flex gap-3 pt-3 border-t border-slate-100 justify-end">
         <button onclick="closeProfileModal()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">סגור</button>
@@ -3726,6 +3737,7 @@
       document.getElementById('profilePassword').value = '';
       document.getElementById('profilePhone').value = currentUserRawData.phone || '';
       document.getElementById('profileFamilyName').value = document.getElementById('navFamilyName').innerText;
+      document.getElementById('profileMonthlyReportToggle').checked = currentUserRawData.monthly_report_enabled !== false;
       document.getElementById('profileModal').classList.remove('hidden');
     }
     
@@ -3735,9 +3747,10 @@
       const password = document.getElementById('profilePassword').value;
       const phone = document.getElementById('profilePhone').value.trim();
       const familyName = document.getElementById('profileFamilyName').value.trim() || 'משפחת ישראלי';
+      const monthlyReportEnabled = document.getElementById('profileMonthlyReportToggle').checked;
 
       const { error: profileError } = await sb.from('profiles')
-        .update({ family_name: familyName, phone })
+        .update({ family_name: familyName, phone, monthly_report_enabled: monthlyReportEnabled })
         .eq('id', currentUserId);
       if (profileError) { console.error(profileError); showToast('שגיאה בעדכון הפרטים. נסו שוב.'); return; }
 
@@ -3746,7 +3759,7 @@
         if (pwError) { showToast('הפרטים עודכנו, אבל עדכון הסיסמה נכשל: ' + pwError.message); }
       }
 
-      currentUserRawData = { ...currentUserRawData, family_name: familyName, phone };
+      currentUserRawData = { ...currentUserRawData, family_name: familyName, phone, monthly_report_enabled: monthlyReportEnabled };
       document.getElementById('navFamilyName').innerText = familyName;
       document.getElementById('profilePassword').value = '';
       showToast('הפרטים עודכנו בהצלחה!');
