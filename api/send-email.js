@@ -9,14 +9,23 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'RESEND_API_KEY לא מוגדר בהגדרות הפרויקט ב-Vercel' });
   }
 
-  const { to, subject, text, html, attachment } = req.body || {};
-  if (!to || !subject || (!text && !html)) {
+  const { to, subject, text, html, attachment, notifyAdmin } = req.body || {};
+
+  // מצב מיוחד: הודעה למנהל (למשל "משתמש חדש ממתין לאישור") - היעד נקבע תמיד לפי משתנה הסביבה ADMIN_EMAIL בשרת,
+  // ולא לפי מה שהלקוח שלח, כדי שכתובת המנהל לעולם לא תהיה חשופה או ניתנת לזיוף מצד הדפדפן.
+  let recipient = to;
+  if (notifyAdmin) {
+    recipient = process.env.ADMIN_EMAIL;
+    if (!recipient) return res.status(500).json({ error: 'ADMIN_EMAIL לא מוגדר בהגדרות הפרויקט ב-Vercel' });
+  }
+
+  if (!recipient || !subject || (!text && !html)) {
     return res.status(400).json({ error: 'חסרים פרטים (to / subject / text או html)' });
   }
 
   const payload = {
     from: process.env.RESEND_FROM || 'FamilyCent <onboarding@resend.dev>',
-    to: [to],
+    to: [recipient],
     subject
   };
   if (html) payload.html = html;
