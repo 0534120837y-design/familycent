@@ -1,35 +1,62 @@
 // api/ivr.js
-// FamilyCent IVR endpoint for Vercel
+// FamilyCent <-> Yemot HaMashiach
 //
-// Required Vercel Environment Variables:
-//   SUPABASE_URL
-//   SUPABASE_SERVICE_ROLE_KEY
+// שלב 1:
+// - קבלת פנייה מימות המשיח
+// - זיהוי מספר המתקשר
+// - חיפוש המשתמש ב-Supabase
+// - החזרת טקסט פשוט לימות המשיח
 //
-// Optional:
-//   IVR_API_SECRET
+// חשוב:
+// במודול API החדש של ימות המשיח תשובת השרת חייבת להיות טקסט פשוט.
+// לכן הפונקציה מחזירה טקסט בלבד ולא JSON ולא id_list_message.
 //
-// Endpoint:
-//   https://familycent.vercel.app/api/ivr
+// משתני סביבה נדרשים ב-Vercel:
+// SUPABASE_URL
+// SUPABASE_SERVICE_ROLE_KEY
 //
-// בשלב הזה הקוד רק בודק את החיבור ומזהה מתקשר.
-// הוא עדיין לא מכניס או משנה נתונים כספיים.
+// אופציונלי:
+// IVR_API_SECRET
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const IVR_API_SECRET = process.env.IVR_API_SECRET || "";
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const IVR_API_SECRET =
+  process.env.IVR_API_SECRET || "";
+
+/* =========================================================
+   פונקציות עזר
+   ========================================================= */
 
 function clean(value) {
-  if (value === undefined || value === null) return "";
-  if (Array.isArray(value)) value = value[0];
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  if (Array.isArray(value)) {
+    value = value[0];
+  }
+
   return String(value).trim();
 }
 
+/**
+ * נרמול מספר ישראלי.
+ *
+ * לדוגמה:
+ * +972501234567 -> 0501234567
+ * 972501234567  -> 0501234567
+ */
 function normalizePhone(raw) {
-  let value = clean(raw).replace(/[^\d+]/g, "");
+  let value = clean(raw);
 
-  if (!value) return "";
+  value = value.replace(/[^\d+]/g, "");
 
-  // המרת מספר ישראלי מפורמט בינלאומי לפורמט מקומי
+  if (!value) {
+    return "";
+  }
+
   if (value.startsWith("+972")) {
     value = "0" + value.slice(4);
   } else if (value.startsWith("972")) {
@@ -39,46 +66,36 @@ function normalizePhone(raw) {
   return value;
 }
 
+/**
+ * איסוף פרמטרים מ-GET וגם מ-POST.
+ */
 function getRequestParams(req) {
   const result = {};
 
   // GET
   if (req.query && typeof req.query === "object") {
     for (const [key, value] of Object.entries(req.query)) {
-      result[key] = Array.isArray(value) ? value[0] : value;
+      result[key] = Array.isArray(value)
+        ? value[0]
+        : value;
     }
   }
 
   // POST
   if (req.body && typeof req.body === "object") {
     for (const [key, value] of Object.entries(req.body)) {
-      result[key] = Array.isArray(value) ? value[0] : value;
+      result[key] = Array.isArray(value)
+        ? value[0]
+        : value;
     }
   }
 
   return result;
 }
 
-function redactForLogs(params) {
-  const copy = { ...params };
-
-  for (const key of Object.keys(copy)) {
-    const k = key.toLowerCase();
-
-    if (
-      k.includes("password") ||
-      k.includes("pass") ||
-      k.includes("token") ||
-      k.includes("secret") ||
-      k.includes("authorization")
-    ) {
-      copy[key] = "***";
-    }
-  }
-
-  return copy;
-}
-
+/**
+ * חיפוש פרמטר לפי כמה שמות אפשריים.
+ */
 function getParam(params, names) {
   for (const name of names) {
     if (
@@ -92,6 +109,12 @@ function getParam(params, names) {
   return "";
 }
 
+/**
+ * מספר המתקשר.
+ *
+ * ימות המשיח שולחים כברירת מחדל:
+ * ApiPhone
+ */
 function getCallerPhone(params) {
   return normalizePhone(
     getParam(params, [
@@ -105,6 +128,13 @@ function getCallerPhone(params) {
   );
 }
 
+/**
+ * הבחירה שהמתקשר הקיש.
+ *
+ * נשאיר תמיכה במספר שמות אפשריים,
+ * כדי שנוכל להתאים את זה בהמשך למבנה המדויק
+ * של שאלות ה-API.
+ */
 function getChoice(params) {
   return getParam(params, [
     "ApiDigits",
@@ -117,34 +147,25 @@ function getChoice(params) {
   ]);
 }
 
-function buildResponse({
-  message = "",
-  folder = "/"
-} = {}) {
-  const safeMessage = String(message)
+/**
+ * מחזיר טקסט פשוט בלבד.
+ *
+ * חשוב מאוד:
+ * אין כאן JSON.
+ * אין id_list_message.
+ * אין go_to_folder.
+ * ימות המשיח יקבלו את הטקסט וישמיעו אותו
+ * כאשר "הקראת תשובת השרת" מסומנת.
+ */
+function plainText(message) {
+  return String(message || "")
     .replace(/\r?\n/g, " ")
-    .replace(/&/g, " and ")
     .trim();
-
-  const parts = [];
-
-  if (safeMessage) {
-    parts.push(
-      `id_list_message=t-${safeMessage}`
-    );
-  }
-
-  if (
-    folder !== null &&
-    folder !== undefined
-  ) {
-    parts.push(
-      `go_to_folder=${folder}`
-    );
-  }
-
-  return parts.join("&");
 }
+
+/* =========================================================
+   Supabase
+   ========================================================= */
 
 async function supabaseRest(
   path,
@@ -163,9 +184,9 @@ async function supabaseRest(
     `${SUPABASE_URL}/rest/v1/${path}`,
     {
       ...options,
+
       headers: {
-        apikey:
-          SUPABASE_SERVICE_ROLE_KEY,
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
 
         Authorization:
           `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
@@ -173,8 +194,8 @@ async function supabaseRest(
         "Content-Type":
           "application/json",
 
-        ...(options.headers || {})
-      }
+        ...(options.headers || {}),
+      },
     }
   );
 
@@ -207,8 +228,13 @@ async function supabaseRest(
   return data;
 }
 
+/**
+ * חיפוש משתמש לפי מספר הטלפון שבפרופיל.
+ */
 async function findProfileByPhone(phone) {
-  if (!phone) return null;
+  if (!phone) {
+    return null;
+  }
 
   const encodedPhone =
     encodeURIComponent(phone);
@@ -216,38 +242,80 @@ async function findProfileByPhone(phone) {
   const data = await supabaseRest(
     `profiles?select=id,email,family_name,phone,currency&phone=eq.${encodedPhone}&limit=1`,
     {
-      method: "GET"
+      method: "GET",
     }
   );
 
-  return Array.isArray(data) &&
+  if (
+    Array.isArray(data) &&
     data.length > 0
-    ? data[0]
-    : null;
+  ) {
+    return data[0];
+  }
+
+  return null;
 }
 
+/* =========================================================
+   תפריט FamilyCent
+   ========================================================= */
+
 function mainMenu() {
-  return [
-    "לתנועות הקש 1",
-    "למצב החשבון הקש 2",
-    "לדוחות הקש 3",
-    "לשליחת דוחות הקש 4",
-    "לקטגוריות הקש 5",
-    "לתקציבים ויעדים הקש 6",
-    "לפעולות קבועות הקש 7",
-    "לפרטים שלי הקש 8",
-    "לעזרה והגדרות הקש 9",
-    "ליציאה הקש 0"
-  ].join(". ");
+  return (
+    "לתנועות הקש 1. " +
+    "למצב החשבון הקש 2. " +
+    "לדוחות הקש 3. " +
+    "לשליחת דוחות הקש 4. " +
+    "לקטגוריות הקש 5. " +
+    "לתקציבים ויעדים הקש 6. " +
+    "לפעולות קבועות הקש 7. " +
+    "לפרטים שלי הקש 8. " +
+    "לעזרה והגדרות הקש 9. " +
+    "ליציאה הקש 0."
+  );
 }
+
+/* =========================================================
+   אבטחת לוגים
+   ========================================================= */
+
+function redactForLogs(params) {
+  const copy = {
+    ...params,
+  };
+
+  for (const key of Object.keys(copy)) {
+    const lower =
+      key.toLowerCase();
+
+    if (
+      lower.includes("password") ||
+      lower.includes("pass") ||
+      lower.includes("token") ||
+      lower.includes("secret") ||
+      lower.includes("authorization")
+    ) {
+      copy[key] = "***";
+    }
+  }
+
+  return copy;
+}
+
+/* =========================================================
+   Handler
+   ========================================================= */
 
 module.exports = async function handler(
   req,
   res
 ) {
-  // מאפשר גם GET וגם POST
+  /**
+   * אנחנו מאפשרים גם GET וגם POST.
+   */
   if (
-    !["GET", "POST"].includes(req.method)
+    req.method !== "GET" &&
+    req.method !== "POST"
   ) {
     res.setHeader(
       "Allow",
@@ -263,13 +331,16 @@ module.exports = async function handler(
     const params =
       getRequestParams(req);
 
-    // אבטחה אופציונלית
+    /* -----------------------------------------------------
+       בדיקת Secret אופציונלית
+       ----------------------------------------------------- */
+
     if (IVR_API_SECRET) {
       const suppliedSecret =
         getParam(params, [
           "token",
           "Token",
-          "ivr_token"
+          "ivr_token",
         ]);
 
       if (
@@ -279,14 +350,16 @@ module.exports = async function handler(
         return res
           .status(401)
           .send(
-            buildResponse({
-              message:
-                "החיבור למערכת אינו מורשה",
-              folder: "/"
-            })
+            plainText(
+              "החיבור למערכת אינו מורשה"
+            )
           );
       }
     }
+
+    /* -----------------------------------------------------
+       פרטי השיחה
+       ----------------------------------------------------- */
 
     const callerPhone =
       getCallerPhone(params);
@@ -299,7 +372,7 @@ module.exports = async function handler(
         "ApiCallId",
         "api_call_id",
         "call_id",
-        "id"
+        "id",
       ]);
 
     const extension =
@@ -307,16 +380,18 @@ module.exports = async function handler(
         "ApiExtension",
         "api_extension",
         "extension",
-        "path"
       ]);
 
     const did =
       getParam(params, [
         "ApiDID",
         "api_did",
-        "did"
+        "did",
       ]);
 
+    /**
+     * לא להדפיס סיסמאות או טוקנים.
+     */
     console.log(
       "FamilyCent IVR request:",
       {
@@ -326,24 +401,32 @@ module.exports = async function handler(
         extension,
         did,
         params:
-          redactForLogs(params)
+          redactForLogs(params),
       }
     );
 
-    // אין מספר מתקשר
+    /* -----------------------------------------------------
+       אין מספר מתקשר
+       ----------------------------------------------------- */
+
     if (!callerPhone) {
       return res
         .status(200)
         .send(
-          buildResponse({
-            message:
-              "ברוכים הבאים ל-FamilyCent. המערכת לא קיבלה את מספר המתקשר. להרשמה הקש 1. לכניסה באמצעות סיסמה הקש 2.",
-            folder: "/"
-          })
+          plainText(
+            "ברוכים הבאים ל-FamilyCent. " +
+            "המערכת לא קיבלה את מספר המתקשר. " +
+            "להרשמה למערכת הקש 1. " +
+            "לכניסה באמצעות סיסמה הקש 2."
+          )
         );
     }
 
-    let profile;
+    /* -----------------------------------------------------
+       חיפוש המשתמש ב-Supabase
+       ----------------------------------------------------- */
+
+    let profile = null;
 
     try {
       profile =
@@ -359,21 +442,26 @@ module.exports = async function handler(
       return res
         .status(200)
         .send(
-          buildResponse({
-            message:
-              "אירעה שגיאה זמנית בחיבור למערכת. נא לנסות שוב מאוחר יותר.",
-            folder: "/"
-          })
+          plainText(
+            "אירעה שגיאה זמנית בחיבור למערכת. " +
+            "נא לנסות שוב מאוחר יותר."
+          )
         );
     }
 
-    // משתמש מוכר
+    /* =====================================================
+       משתמש מוכר
+       ===================================================== */
+
     if (profile) {
       const familyName =
         clean(profile.family_name) ||
         "משפחתכם";
 
-      // בשלב הראשון לא משנים נתונים
+      /* ---------------------------------------------------
+         אם הוקשה בחירה
+         --------------------------------------------------- */
+
       if (choice) {
         const allowedChoices =
           new Set([
@@ -386,67 +474,182 @@ module.exports = async function handler(
             "6",
             "7",
             "8",
-            "9"
+            "9",
           ]);
 
+        /**
+         * בדיקה בסיסית שהבחירה תקינה.
+         */
         if (
-          !allowedChoices.has(choice)
+          !allowedChoices.has(
+            choice
+          )
         ) {
           return res
             .status(200)
             .send(
-              buildResponse({
-                message:
-                  "בחירה לא תקינה. " +
-                  mainMenu(),
-                folder: "/"
-              })
+              plainText(
+                "בחירה לא תקינה. " +
+                mainMenu()
+              )
             );
         }
+
+        /* -----------------------------------------------
+           0 = יציאה
+           ----------------------------------------------- */
 
         if (choice === "0") {
           return res
             .status(200)
             .send(
-              buildResponse({
-                message:
-                  "להתראות.",
-                folder: "/"
-              })
+              plainText(
+                "להתראות."
+              )
             );
         }
 
-        return res
-          .status(200)
-          .send(
-            buildResponse({
-              message:
-                `שלום ${familyName}. בחרת ${choice}. התפריט המלא יחובר בשלב הבא.`,
-              folder: "/"
-            })
-          );
+        /* -----------------------------------------------
+           שלב ראשון:
+           רק בדיקת החיבור והבחירה.
+           ----------------------------------------------- */
+
+        if (choice === "1") {
+          return res
+            .status(200)
+            .send(
+              plainText(
+                `שלום ${familyName}. ` +
+                "נכנסת לתפריט התנועות. " +
+                "המערכת מוכנה לשלב הבא."
+              )
+            );
+        }
+
+        if (choice === "2") {
+          return res
+            .status(200)
+            .send(
+              plainText(
+                `שלום ${familyName}. ` +
+                "בחרת מצב חשבון. " +
+                "המערכת מוכנה לשלב הבא."
+              )
+            );
+        }
+
+        if (choice === "3") {
+          return res
+            .status(200)
+            .send(
+              plainText(
+                `שלום ${familyName}. ` +
+                "בחרת דוחות. " +
+                "המערכת מוכנה לשלב הבא."
+              )
+            );
+        }
+
+        if (choice === "4") {
+          return res
+            .status(200)
+            .send(
+              plainText(
+                `שלום ${familyName}. ` +
+                "בחרת שליחת דוחות. " +
+                "המערכת מוכנה לשלב הבא."
+              )
+            );
+        }
+
+        if (choice === "5") {
+          return res
+            .status(200)
+            .send(
+              plainText(
+                `שלום ${familyName}. ` +
+                "בחרת קטגוריות. " +
+                "המערכת מוכנה לשלב הבא."
+              )
+            );
+        }
+
+        if (choice === "6") {
+          return res
+            .status(200)
+            .send(
+              plainText(
+                `שלום ${familyName}. ` +
+                "בחרת תקציבים ויעדים. " +
+                "המערכת מוכנה לשלב הבא."
+              )
+            );
+        }
+
+        if (choice === "7") {
+          return res
+            .status(200)
+            .send(
+              plainText(
+                `שלום ${familyName}. ` +
+                "בחרת פעולות קבועות. " +
+                "המערכת מוכנה לשלב הבא."
+              )
+            );
+        }
+
+        if (choice === "8") {
+          return res
+            .status(200)
+            .send(
+              plainText(
+                `שלום ${familyName}. ` +
+                "בחרת פרטים אישיים. " +
+                "המערכת מוכנה לשלב הבא."
+              )
+            );
+        }
+
+        if (choice === "9") {
+          return res
+            .status(200)
+            .send(
+              plainText(
+                `שלום ${familyName}. ` +
+                "בחרת עזרה והגדרות. " +
+                "המערכת מוכנה לשלב הבא."
+              )
+            );
+        }
       }
+
+      /* ---------------------------------------------------
+         משתמש מוכר ללא בחירה
+         --------------------------------------------------- */
 
       return res
         .status(200)
         .send(
-          buildResponse({
-            message:
-              `שלום ${familyName}. ברוכים הבאים ל-FamilyCent. ${mainMenu()}`,
-            folder: "/"
-          })
+          plainText(
+            `שלום ${familyName}. ` +
+            "ברוכים הבאים ל-FamilyCent. " +
+            mainMenu()
+          )
         );
     }
 
-    // משתמש לא מוכר
+    /* =====================================================
+       מספר לא מוכר
+       ===================================================== */
+
     return res
       .status(200)
       .send(
-        buildResponse({
-          message:
-            "המספר שממנו התקשרת אינו מזוהה במערכת. להרשמה למערכת הקש 1. לכניסה באמצעות סיסמה הקש 2.",
-          folder: "/"
-        })
+        plainText(
+          "המספר שממנו התקשרת אינו מזוהה במערכת. " +
+          "להרשמה למערכת הקש 1. " +
+          "לכניסה למערכת באמצעות סיסמה הקש 2."
+        )
       );
 
   } catch (error) {
@@ -458,11 +661,10 @@ module.exports = async function handler(
     return res
       .status(200)
       .send(
-        buildResponse({
-          message:
-            "אירעה שגיאה במערכת. נא לנסות שוב מאוחר יותר.",
-          folder: "/"
-        })
+        plainText(
+          "אירעה שגיאה במערכת. " +
+          "נא לנסות שוב מאוחר יותר."
+        )
       );
   }
 };
