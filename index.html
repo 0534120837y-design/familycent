@@ -453,6 +453,32 @@
       +
     </button>
 
+    <!-- כפתור צף ליועץ הפיננסי - בצד הנגדי לכפתור ההוספה -->
+    <button id="floatingAdvisorBtn" onclick="toggleAdvisorChat()" class="fixed bottom-6 right-6 md:bottom-8 md:right-8 z-40 px-5 h-14 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-2xl flex items-center gap-2 transition transform hover:scale-105 active:scale-95 no-print" title="שאל את היועץ">
+      💬 שאל את היועץ
+    </button>
+
+    <!-- חלון צ'אט של היועץ הפיננסי -->
+    <div id="advisorChatWindow" class="hidden fixed bottom-24 right-4 md:bottom-28 md:right-8 z-50 w-[calc(100vw-2rem)] sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden no-print" style="max-height: min(70vh, 520px);">
+      <div class="bg-indigo-600 text-white px-4 py-3 flex items-center justify-between shrink-0">
+        <h3 class="font-bold text-sm flex items-center gap-2">💬 היועץ הפיננסי</h3>
+        <div class="flex items-center gap-2">
+          <button onclick="resetFinancialAdvisor()" id="advisorResetBtn" class="text-xs hover:underline hidden" title="שיחה חדשה">🗑️</button>
+          <button onclick="toggleAdvisorChat()" class="text-xl leading-none hover:opacity-70" title="סגור">✕</button>
+        </div>
+      </div>
+
+      <div id="advisorResponse" class="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50 min-h-[120px]"></div>
+
+      <div class="p-3 border-t border-slate-200 bg-white shrink-0">
+        <button onclick="askFinancialAdvisor(true)" class="w-full text-[11px] font-bold text-indigo-600 hover:underline mb-2 text-right">✨ מה כדאי לי לעשות החודש? (ניתוח כללי)</button>
+        <div class="flex gap-2">
+          <input id="advisorQuestionInput" type="text" placeholder="שאלו על התקציב שלכם..." onkeydown="if(event.key==='Enter'){askFinancialAdvisor();}" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-indigo-500">
+          <button onclick="askFinancialAdvisor()" id="advisorAskBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-sm whitespace-nowrap transition">שלח</button>
+        </div>
+      </div>
+    </div>
+
     <!-- תוכן מרכזי לפי לשוניות -->
     <main class="flex-1 p-4 sm:p-8 overflow-y-auto">
       
@@ -492,20 +518,6 @@
         <div class="bg-gradient-to-l from-indigo-50 to-white border border-indigo-100 rounded-2xl p-5 mb-6 no-print">
           <h3 class="text-sm font-bold text-indigo-700 mb-2 flex items-center gap-1">💡 תובנות חכמות</h3>
           <div id="insightsCard"></div>
-        </div>
-
-        <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md mb-6 no-print">
-          <div class="flex items-center justify-between mb-1">
-            <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">🤖 היועץ הפיננסי של FamilyCent</h3>
-            <button onclick="resetFinancialAdvisor()" id="advisorResetBtn" class="text-xs font-semibold text-slate-500 hover:text-rose-600 hover:underline hidden">🗑️ שיחה חדשה</button>
-          </div>
-          <p class="text-[11px] text-slate-400 mb-4">שאלו שאלה חופשית, או פשוט לחצו "מה כדאי לי לעשות החודש?" לניתוח כללי</p>
-          <div class="flex flex-col sm:flex-row gap-2 mb-3">
-            <input id="advisorQuestionInput" type="text" placeholder="למשל: איפה אני יכול לחסוך החודש?" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-indigo-500">
-            <button onclick="askFinancialAdvisor()" id="advisorAskBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2 rounded-xl text-sm whitespace-nowrap transition">💬 שאל את היועץ</button>
-          </div>
-          <button onclick="askFinancialAdvisor(true)" class="text-xs font-bold text-indigo-600 hover:underline mb-2">✨ מה כדאי לי לעשות החודש? (ניתוח כללי)</button>
-          <div id="advisorResponse" class="mt-3 space-y-3 max-h-96 overflow-y-auto hidden"></div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8 no-print">
@@ -2099,20 +2111,34 @@
 
     let advisorHistory = [];
 
+    function toggleAdvisorChat() {
+      const win = document.getElementById('advisorChatWindow');
+      const isHidden = win.classList.contains('hidden');
+      if (isHidden) {
+        win.classList.remove('hidden');
+        renderAdvisorChat();
+        setTimeout(() => { const i = document.getElementById('advisorQuestionInput'); if (i) i.focus(); }, 100);
+      } else {
+        win.classList.add('hidden');
+      }
+    }
+
     function renderAdvisorChat() {
       const responseEl = document.getElementById('advisorResponse');
       const resetBtn = document.getElementById('advisorResetBtn');
+      if (!responseEl) return;
       if (advisorHistory.length === 0) {
-        responseEl.classList.add('hidden');
-        responseEl.innerHTML = '';
-        resetBtn.classList.add('hidden');
+        responseEl.innerHTML = `<div class="text-center text-slate-400 text-sm py-6 px-3">
+          <div class="text-3xl mb-2">💬</div>
+          שלום! אני היועץ הפיננסי שלכם.<br>שאלו אותי כל שאלה על התקציב, ההוצאות והחיסכון שלכם.
+        </div>`;
+        if (resetBtn) resetBtn.classList.add('hidden');
         return;
       }
-      responseEl.classList.remove('hidden');
-      resetBtn.classList.remove('hidden');
+      if (resetBtn) resetBtn.classList.remove('hidden');
       responseEl.innerHTML = advisorHistory.map(turn => `
         ${turn.question ? `<div class="flex justify-end"><div class="bg-indigo-600 text-white text-sm rounded-2xl rounded-tl-sm px-4 py-2 max-w-[85%] whitespace-pre-line">${turn.question}</div></div>` : ''}
-        <div class="flex justify-start"><div class="bg-slate-50 border border-slate-100 text-slate-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3 max-w-[90%] whitespace-pre-line">${turn.advice}</div></div>
+        <div class="flex justify-start"><div class="bg-white border border-slate-200 text-slate-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3 max-w-[90%] whitespace-pre-line">${turn.advice}</div></div>
       `).join('');
       responseEl.scrollTop = responseEl.scrollHeight;
     }
@@ -2132,12 +2158,14 @@
       const responseEl = document.getElementById('advisorResponse');
       const btn = document.getElementById('advisorAskBtn');
 
+      if (advisorHistory.length === 0) responseEl.innerHTML = '';
+
       const originalBtnText = btn.innerText;
-      btn.innerText = '⏳ חושב...';
+      btn.innerText = '⏳';
       btn.disabled = true;
-      responseEl.classList.remove('hidden');
-      document.getElementById('advisorResetBtn').classList.remove('hidden');
-      const thinkingLine = `<div class="flex justify-start"><div class="bg-slate-50 border border-slate-100 text-slate-400 text-sm rounded-2xl rounded-tr-sm px-4 py-3 italic" id="advisorThinking">מנתח את הנתונים שלכם...</div></div>`;
+      const resetBtn = document.getElementById('advisorResetBtn');
+      if (resetBtn) resetBtn.classList.remove('hidden');
+      const thinkingLine = `<div class="flex justify-start"><div class="bg-white border border-slate-200 text-slate-400 text-sm rounded-2xl rounded-tr-sm px-4 py-3 italic" id="advisorThinking">מנתח את הנתונים שלכם...</div></div>`;
       responseEl.insertAdjacentHTML('beforeend', thinkingLine);
       responseEl.scrollTop = responseEl.scrollHeight;
 
@@ -2146,7 +2174,7 @@
         const response = await fetch('/api/ai-assist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'advisor', question, financialSummary, history: advisorHistory })
+          body: JSON.stringify({ mode: 'advisor', question, financialSummary, history: advisorHistory, userId: currentUserId })
         });
         const data = await response.json();
         const thinkingEl = document.getElementById('advisorThinking');
@@ -2157,12 +2185,14 @@
           if (!generalMode) questionInput.value = '';
         } else {
           responseEl.insertAdjacentHTML('beforeend', `<div class="flex justify-start"><div class="bg-rose-50 border border-rose-100 text-rose-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3">שגיאה: ${data.error || 'לא הצלחנו לקבל תשובה מהיועץ (סטטוס ' + response.status + ')'}</div></div>`);
+          responseEl.scrollTop = responseEl.scrollHeight;
         }
       } catch (err) {
         console.error(err);
         const thinkingEl = document.getElementById('advisorThinking');
         if (thinkingEl) thinkingEl.closest('.flex').remove();
         responseEl.insertAdjacentHTML('beforeend', `<div class="flex justify-start"><div class="bg-rose-50 border border-rose-100 text-rose-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3">שגיאת רשת בפנייה ליועץ הפיננסי: ${err.message || err}</div></div>`);
+        responseEl.scrollTop = responseEl.scrollHeight;
       } finally {
         btn.innerText = originalBtnText;
         btn.disabled = false;
@@ -2182,7 +2212,7 @@
         const response = await fetch('/api/ai-assist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'suggest_category', description: desc, categories: customCategories })
+          body: JSON.stringify({ mode: 'suggest_category', description: desc, categories: customCategories, userId: currentUserId })
         });
         const data = await response.json();
         if (data.error) {
@@ -2246,7 +2276,7 @@
         const response = await fetch('/api/ai-assist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'parse_receipt', imageBase64: base64 })
+          body: JSON.stringify({ mode: 'parse_receipt', imageBase64: base64, userId: currentUserId })
         });
         const data = await response.json();
         if (data.amount) document.getElementById('amountInput').value = data.amount;
@@ -2960,6 +2990,8 @@
 
       /* הכפתור הצף להוספת פעולה רלוונטי רק בלוח הבקרה הראשי */
       document.getElementById('floatingAddBtn').classList.toggle('hidden', tabName !== 'main');
+      document.getElementById('floatingAdvisorBtn').classList.toggle('hidden', tabName !== 'main');
+      if (tabName !== 'main') document.getElementById('advisorChatWindow').classList.add('hidden');
 
       if (tabName === 'main') {
         document.getElementById('tabContentMain').classList.add('active');
