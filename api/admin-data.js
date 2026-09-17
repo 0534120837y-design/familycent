@@ -16,18 +16,36 @@ module.exports = async function handler(req, res) {
 
   const sbHeaders = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' };
   const RESEND_KEY = process.env.RESEND_API_KEY;
+  const SITE_URL = 'https://' + (req.headers.host || 'familycent.vercel.app');
 
-  async function sendPlainEmail(to, subject, text) {
+  function wrapAdminEmailHtml(title, subtitle, innerHtml) {
+    return `
+    <div dir="rtl" style="font-family: Arial, Helvetica, sans-serif; background:#f1f5f9; padding:24px; direction:rtl;">
+      <div style="max-width:640px; margin:0 auto; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,0.06);">
+        <div style="background:linear-gradient(90deg,#4f46e5,#6366f1); padding:24px 28px; color:#ffffff;">
+          <div style="font-size:22px; font-weight:800;">💰 FamilyCent</div>
+          <div style="font-size:16px; font-weight:700; margin-top:6px;">${title}</div>
+          ${subtitle ? `<div style="font-size:13px; opacity:.9; margin-top:2px;">${subtitle}</div>` : ''}
+        </div>
+        <div style="padding:24px 28px;">${innerHtml}</div>
+        <div style="background:#f8fafc; padding:14px 28px; text-align:center; color:#94a3b8; font-size:11px;">
+          נשלח אוטומטית מאפליקציית FamilyCent
+        </div>
+      </div>
+    </div>`;
+  }
+
+  async function sendPlainEmail(to, subject, text, html) {
     if (!RESEND_KEY) { console.error('RESEND_API_KEY חסר - לא ניתן לשלוח מייל'); return; }
     try {
-      await fetch('https://api.resend.com/emails', {
+      const payload = { from: process.env.RESEND_FROM || 'FamilyCent <onboarding@resend.dev>', to: [to], subject, text };
+      if (html) payload.html = html;
+      const r = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_KEY}` },
-        body: JSON.stringify({
-          from: process.env.RESEND_FROM || 'FamilyCent <onboarding@resend.dev>',
-          to: [to], subject, text
-        })
+        body: JSON.stringify(payload)
       });
+      if (!r.ok) console.error('Resend החזיר שגיאה בשליחת מייל ל-' + to + ':', await r.text());
     } catch (err) {
       console.error('שליחת מייל נכשלה:', err);
     }
@@ -142,10 +160,17 @@ module.exports = async function handler(req, res) {
       }
 
       if (target && target.email) {
+        const approveInner = `
+          <p style="font-size:14px; color:#334155; line-height:1.7;">שלום${target.family_name ? ' ' + target.family_name : ''},</p>
+          <p style="font-size:14px; color:#334155; line-height:1.7;">ההרשמה שלכם ל-FamilyCent <b style="color:#059669;">אושרה</b>! אתם יכולים להתחבר עכשיו ולהתחיל להשתמש באפליקציה.</p>
+          <div style="text-align:center; margin-top:24px;">
+            <a href="${SITE_URL}" style="display:inline-block; background:#059669; color:#ffffff; text-decoration:none; font-weight:700; font-size:14px; padding:12px 28px; border-radius:10px;">כניסה לאפליקציה 🎉</a>
+          </div>`;
         await sendPlainEmail(
           target.email,
           'FamilyCent - ההרשמה שלכם אושרה! 🎉',
-          `שלום${target.family_name ? ' ' + target.family_name : ''},\n\nההרשמה שלכם ל-FamilyCent אושרה! אתם יכולים להתחבר עכשיו ולהתחיל להשתמש באפליקציה.\n\nבברכה,\nצוות FamilyCent`
+          `שלום${target.family_name ? ' ' + target.family_name : ''},\n\nההרשמה שלכם ל-FamilyCent אושרה! אתם יכולים להתחבר עכשיו ולהתחיל להשתמש באפליקציה.\n\nכניסה: ${SITE_URL}\n\nבברכה,\nצוות FamilyCent`,
+          wrapAdminEmailHtml('ההרשמה שלכם אושרה! 🎉', null, approveInner)
         );
       }
       return res.status(200).json({ success: true });
@@ -167,10 +192,16 @@ module.exports = async function handler(req, res) {
 
       if (target && target.email) {
         const reasonLine = reason ? `\n\nסיבה: ${reason}` : '';
+        const reasonHtml = reason ? `<div style="background:#fff1f2; border-radius:10px; padding:12px 14px; font-size:13px; color:#be123c; margin-top:10px;"><b>סיבה:</b> ${reason}</div>` : '';
+        const rejectInner = `
+          <p style="font-size:14px; color:#334155; line-height:1.7;">שלום${target.family_name ? ' ' + target.family_name : ''},</p>
+          <p style="font-size:14px; color:#334155; line-height:1.7;">לצערנו בקשת ההרשמה שלכם ל-FamilyCent <b style="color:#e11d48;">לא אושרה</b>.</p>
+          ${reasonHtml}`;
         await sendPlainEmail(
           target.email,
           'FamilyCent - עדכון לגבי בקשת ההרשמה שלכם',
-          `שלום${target.family_name ? ' ' + target.family_name : ''},\n\nלצערנו בקשת ההרשמה שלכם ל-FamilyCent לא אושרה.${reasonLine}\n\nבברכה,\nצוות FamilyCent`
+          `שלום${target.family_name ? ' ' + target.family_name : ''},\n\nלצערנו בקשת ההרשמה שלכם ל-FamilyCent לא אושרה.${reasonLine}\n\nבברכה,\nצוות FamilyCent`,
+          wrapAdminEmailHtml('עדכון לגבי בקשת ההרשמה', null, rejectInner)
         );
       }
 
