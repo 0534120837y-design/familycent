@@ -1304,8 +1304,8 @@
             <div class="flex items-center gap-2 mb-1">
               <span class="text-2xl">💳</span>
               <div>
-                <div class="font-bold text-slate-900">${card.card_name}</div>
-                ${card.last4 ? `<div class="text-[11px] text-slate-400" style="direction:ltr; text-align:right;">•••• ${card.last4}</div>` : ''}
+                <div class="font-bold text-slate-900">${escapeHtml(card.card_name)}</div>
+                ${card.last4 ? `<div class="text-[11px] text-slate-400" style="direction:ltr; text-align:right;">•••• ${escapeHtml(card.last4)}</div>` : ''}
               </div>
             </div>
             <div class="mt-3">
@@ -1331,7 +1331,7 @@
       const select = document.getElementById('cardAssignInput');
       if (!select) return;
       select.innerHTML = '<option value="">ללא שיוך לכרטיס (מזומן / העברה)</option>' +
-        userCreditCardRows.map(c => `<option value="${c.id}">💳 ${c.card_name}${c.last4 ? ' •••• ' + c.last4 : ''}</option>`).join('');
+        userCreditCardRows.map(c => `<option value="${c.id}">💳 ${escapeHtml(c.card_name + (c.last4 ? ' •••• ' + c.last4 : ''))}</option>`).join('');
     }
     /* --- סוף כרטיסי אשראי --- */
 
@@ -1394,7 +1394,7 @@
       const isHidden = form.classList.contains('hidden');
       if (isHidden) {
         const select = document.getElementById('newBudgetCategorySelect');
-        select.innerHTML = customCategories.map(c => `<option value="${escapeHtml(c)}">${c}</option>`).join('');
+        select.innerHTML = customCategories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
         form.classList.remove('hidden');
       } else {
         form.classList.add('hidden');
@@ -1440,11 +1440,11 @@
         const pct = Math.min(100, (spent / limit) * 100);
         const overBudget = spent > limit;
         const barColor = overBudget ? 'bg-rose-500' : (pct > 80 ? 'bg-amber-500' : 'bg-emerald-500');
-        const safeCat = cat.replace(/'/g, "\\'");
+        const safeCat = escapeHtml(cat.replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
         container.insertAdjacentHTML('beforeend', `
           <div class="p-3 border ${overBudget ? 'bg-rose-50/60 border-rose-200' : 'border-slate-200'} rounded-xl">
             <div class="flex justify-between items-center mb-2">
-              <span class="font-semibold text-sm">${cat}</span>
+              <span class="font-semibold text-sm">${escapeHtml(cat)}</span>
               <div class="flex items-center gap-2">
                 <span class="text-xs ${overBudget ? 'text-rose-600 font-bold' : 'text-slate-500'}">${currentUserCurrency}${spent.toLocaleString()} / ${currentUserCurrency}${limit.toLocaleString()} ${overBudget ? '⚠️' : ''}</span>
                 <button onclick="editBudgetAmount('${safeCat}', ${limit})" class="text-slate-300 hover:text-indigo-600 text-xs" title="ערוך תקציב">✏️</button>
@@ -1472,7 +1472,7 @@
         container.insertAdjacentHTML('beforeend', `
           <div class="p-3 border ${done ? 'bg-emerald-50/60 border-emerald-200' : 'border-slate-200'} rounded-xl">
             <div class="flex justify-between items-center mb-2">
-              <span class="font-semibold text-sm">${done ? '🎉' : '🎯'} ${g.name}</span>
+              <span class="font-semibold text-sm">${done ? '🎉' : '🎯'} ${escapeHtml(g.name)}</span>
               <span class="text-xs text-slate-500">${currentUserCurrency}${g.current.toLocaleString()} / ${currentUserCurrency}${g.target.toLocaleString()}</span>
             </div>
             <div class="w-full bg-slate-100 rounded-full h-2.5 mb-3">
@@ -1504,8 +1504,8 @@
         container.insertAdjacentHTML('beforeend', `
           <div class="flex justify-between items-center p-3 border border-slate-200 rounded-xl">
             <div>
-              <span class="font-semibold text-sm">${r.description}</span>
-              <span class="text-xs text-slate-400 mr-2">(${r.category}) • כל ${r.dayOfMonth} לחודש • ${dueText}</span>
+              <span class="font-semibold text-sm">${escapeHtml(r.description)}</span>
+              <span class="text-xs text-slate-400 mr-2">(${escapeHtml(r.category)}) • כל ${r.dayOfMonth} לחודש • ${dueText}</span>
             </div>
             <div class="flex items-center gap-3">
               <span class="font-bold text-sm ${isExp ? 'text-rose-500' : 'text-emerald-600'}">${isExp ? '-' : '+'}${currentUserCurrency}${parseFloat(r.amount).toLocaleString()}</span>
@@ -1609,7 +1609,7 @@
         if (alertLines.length === 0) {
           alertsListEl.innerHTML = '';
         } else {
-          alertsListEl.innerHTML = alertLines.slice(0, 5).map(l => `<p class="text-xs sm:text-sm text-slate-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">${l}</p>`).join('');
+          alertsListEl.innerHTML = alertLines.slice(0, 5).map(l => `<p class="text-xs sm:text-sm text-slate-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">${escapeHtml(l)}</p>`).join('');
         }
       }
     }
@@ -1631,7 +1631,7 @@
       Object.keys(budgets).forEach(cat => { if (budgets[cat] > 0 && (spent[cat] || 0) > budgets[cat]) overCats.push(cat); });
       if (overCats.length === 0) { banner.classList.add('hidden'); banner.innerHTML = ''; return; }
       banner.classList.remove('hidden');
-      banner.innerHTML = `<div class="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-4 text-sm font-semibold flex justify-between items-center flex-wrap gap-2"><span>⚠️ חריגה מהתקציב החודשי בקטגוריות: ${overCats.join(', ')}</span><span class="flex gap-3"><button onclick="sendReminderDigestEmail()" class="underline font-bold whitespace-nowrap">📧 שלח תזכורת במייל</button><button onclick="switchTab('budgets')" class="underline font-bold whitespace-nowrap">לצפייה בפירוט ←</button></span></div>`;
+      banner.innerHTML = `<div class="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-4 text-sm font-semibold flex justify-between items-center flex-wrap gap-2"><span>⚠️ חריגה מהתקציב החודשי בקטגוריות: ${escapeHtml(overCats.join(', '))}</span><span class="flex gap-3"><button onclick="sendReminderDigestEmail()" class="underline font-bold whitespace-nowrap">📧 שלח תזכורת במייל</button><button onclick="switchTab('budgets')" class="underline font-bold whitespace-nowrap">לצפייה בפירוט ←</button></span></div>`;
     }
 
     function toggleTrendChart() {
@@ -1681,6 +1681,13 @@
     }
     /* --- אינטגרציות: שליחת מייל (EmailJS) והצעת קטגוריה עם AI --- */
     /* --- שליחת מייל: דרך פונקציית שרת מאובטחת (/api/send-email), בלי הגדרות אישיות --- */
+    async function authHeaders() {
+      const { data: { session } } = await sb.auth.getSession();
+      const h = { 'Content-Type': 'application/json' };
+      if (session) h.Authorization = `Bearer ${session.access_token}`;
+      return h;
+    }
+
     async function sendEmail(subject, message, html) {
       try {
         const body = { to: currentUserEmail, subject };
@@ -1688,7 +1695,7 @@
         if (message) body.text = message;
         const response = await fetch('/api/send-email', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await authHeaders(),
           body: JSON.stringify(body)
         });
         const data = await response.json();
@@ -1707,7 +1714,7 @@
         if (html) body.html = html;
         const response = await fetch('/api/send-email', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await authHeaders(),
           body: JSON.stringify(body)
         });
         const data = await response.json();
@@ -2155,8 +2162,8 @@
       }
       if (resetBtn) resetBtn.classList.remove('hidden');
       responseEl.innerHTML = advisorHistory.map(turn => `
-        ${turn.question ? `<div class="flex justify-end"><div class="bg-indigo-600 text-white text-sm rounded-2xl rounded-tl-sm px-4 py-2 max-w-[85%] whitespace-pre-line">${turn.question}</div></div>` : ''}
-        <div class="flex justify-start"><div class="bg-white border border-slate-200 text-slate-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3 max-w-[90%] whitespace-pre-line">${turn.advice}</div></div>
+        ${turn.question ? `<div class="flex justify-end"><div class="bg-indigo-600 text-white text-sm rounded-2xl rounded-tl-sm px-4 py-2 max-w-[85%] whitespace-pre-line">${escapeHtml(turn.question)}</div></div>` : ''}
+        <div class="flex justify-start"><div class="bg-white border border-slate-200 text-slate-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3 max-w-[90%] whitespace-pre-line">${escapeHtml(turn.advice)}</div></div>
       `).join('');
       responseEl.scrollTop = responseEl.scrollHeight;
     }
@@ -2572,7 +2579,7 @@
       if (lines.length === 0) {
         el.innerHTML = '<p class="text-sm text-slate-400">אין עדיין מספיק נתונים להצגת תובנות. המשיכו לתעד פעולות!</p>';
       } else {
-        el.innerHTML = lines.map(l => `<p class="text-sm text-slate-700 mb-1.5 last:mb-0">${l}</p>`).join('');
+        el.innerHTML = lines.map(l => `<p class="text-sm text-slate-700 mb-1.5 last:mb-0">${escapeHtml(l)}</p>`).join('');
       }
     }
     function renderMonthComparison() {
@@ -2621,7 +2628,7 @@
         }
         return `
           <tr class="border-b border-slate-100">
-            <td class="p-2 font-semibold text-sm">${cat}</td>
+            <td class="p-2 font-semibold text-sm">${escapeHtml(cat)}</td>
             <td class="p-2 text-sm text-slate-600">${currentUserCurrency}${a.toLocaleString()}</td>
             <td class="p-2 text-sm text-slate-600">${currentUserCurrency}${b.toLocaleString()}</td>
             <td class="p-2 text-sm font-bold ${changeClass}">${changeText}</td>
@@ -2722,8 +2729,8 @@
         let itemsHtml = '';
         (ev.items || []).slice(0, 2).forEach(it => {
           const color = it.isExp ? 'text-rose-600' : 'text-emerald-600';
-          const shortDesc = it.desc.length > 8 ? it.desc.slice(0, 8) + '…' : it.desc;
-          itemsHtml += `<div class="truncate ${color}" title="${it.desc}: ${currentUserCurrency}${it.amount.toLocaleString()}">${shortDesc} ${it.isExp ? '-' : '+'}${it.amount.toLocaleString()}</div>`;
+          const shortDesc = escapeHtml(it.desc.length > 8 ? it.desc.slice(0, 8) + '…' : it.desc);
+          itemsHtml += `<div class="truncate ${color}" title="${escapeHtml(it.desc)}: ${currentUserCurrency}${it.amount.toLocaleString()}">${shortDesc} ${it.isExp ? '-' : '+'}${it.amount.toLocaleString()}</div>`;
         });
         if ((ev.items || []).length > 2) {
           itemsHtml += `<div class="text-slate-400">+${ev.items.length - 2} נוספות</div>`;
@@ -2759,7 +2766,7 @@
       let itemsHtml = ev.items.map(it => {
         const color = it.isExp ? 'text-rose-600' : 'text-emerald-600';
         return `<div class="flex justify-between gap-3 py-0.5 border-b border-slate-100 last:border-0">
-          <span class="truncate">${it.desc}</span>
+          <span class="truncate">${escapeHtml(it.desc)}</span>
           <span class="font-bold ${color} whitespace-nowrap">${it.isExp ? '-' : '+'}${currentUserCurrency}${it.amount.toLocaleString()}</span>
         </div>`;
       }).join('');
@@ -2913,8 +2920,8 @@
     /* --- סוף כפתור הקשרי --- */
 
     function escapeHtml(str) {
-      if (!str) return '';
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      if (str === null || str === undefined) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function sortTransactionsList(list) {
@@ -3216,62 +3223,13 @@
       }
     }
 
-    /* --- שולח למשתמש עצמו מייל אישור שהרשמתו נקלטה וממתינה לאישור מנהל --- */
-    async function notifyUserOfPendingRegistration(userEmail, familyName) {
-      const siteUrl = window.location.origin;
-      const inner = `
-        <p style="font-size:14px; color:#334155; line-height:1.7;">שלום${familyName ? ' ' + familyName : ''},</p>
-        <p style="font-size:14px; color:#334155; line-height:1.7;">תודה שנרשמתם ל-FamilyCent! ההרשמה שלכם נקלטה בהצלחה, אך היא עדיין <b>ממתינה לאישור מנהל המערכת</b>.</p>
-        <p style="font-size:14px; color:#334155; line-height:1.7;">תקבלו מייל נוסף ברגע שהחשבון שלכם יאושר, ואז תוכלו להתחבר ולהתחיל להשתמש באפליקציה.</p>
-        <div style="text-align:center; margin-top:24px;">
-          <a href="${siteUrl}" style="display:inline-block; background:#4f46e5; color:#ffffff; text-decoration:none; font-weight:700; font-size:14px; padding:12px 28px; border-radius:10px;">כניסה לאתר FamilyCent</a>
-        </div>`;
-      const html = wrapEmailHtml('ההרשמה שלכם נקלטה', 'ממתינה לאישור מנהל', inner);
-      try {
-        await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: userEmail,
-            subject: 'FamilyCent - ההרשמה שלכם נקלטה בהצלחה',
-            text: `שלום${familyName ? ' ' + familyName : ''},\n\nתודה שנרשמתם ל-FamilyCent! ההרשמה שלכם נקלטה בהצלחה, אך היא עדיין ממתינה לאישור מנהל המערכת.\n\nתקבלו מייל נוסף ברגע שהחשבון שלכם יאושר, ואז תוכלו להתחבר ולהתחיל להשתמש באפליקציה.\n\nכניסה לאתר: ${siteUrl}\n\nבברכה,\nצוות FamilyCent`,
-            html
-          })
-        });
-      } catch (err) {
-        console.error('שליחת מייל אישור הרשמה נכשלה', err);
-      }
-    }
-
-    /* --- שולח התראה למנהל המערכת כשמשתמש חדש נרשם וממתין לאישור --- */
+    /* --- שולח התראה למנהל המערכת כשמשתמש חדש נרשם וממתין לאישור (השרת בונה את התוכן ואת היעד) --- */
     async function notifyAdminOfPendingUser(userEmail, familyName) {
-      const adminLink = window.location.origin + '/#admin';
-      const inner = `
-        <p style="font-size:14px; color:#334155; line-height:1.7;">משתמש חדש נרשם ומחכה לאישור שלכם:</p>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0;">
-          <tr>
-            <td style="padding:10px 14px; background:#f8fafc; border-radius:10px 10px 0 0; border-bottom:1px solid #f1f5f9; font-size:13px; color:#64748b;">משפחה</td>
-            <td style="padding:10px 14px; background:#f8fafc; border-radius:10px 10px 0 0; border-bottom:1px solid #f1f5f9; font-size:13px; font-weight:700; color:#334155; text-align:left;">${familyName}</td>
-          </tr>
-          <tr>
-            <td style="padding:10px 14px; background:#f8fafc; border-radius:0 0 10px 10px; font-size:13px; color:#64748b;">אימייל</td>
-            <td style="padding:10px 14px; background:#f8fafc; border-radius:0 0 10px 10px; font-size:13px; font-weight:700; color:#334155; text-align:left;" dir="ltr">${userEmail}</td>
-          </tr>
-        </table>
-        <div style="text-align:center; margin-top:24px;">
-          <a href="${adminLink}" style="display:inline-block; background:#d97706; color:#ffffff; text-decoration:none; font-weight:700; font-size:14px; padding:12px 28px; border-radius:10px;">🔑 מעבר לפאנל המנהל</a>
-        </div>`;
-      const html = wrapEmailHtml('משתמש חדש ממתין לאישור', familyName, inner);
       try {
         await fetch('/api/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            notifyAdmin: true,
-            subject: 'FamilyCent - משתמש חדש ממתין לאישור',
-            text: `משתמש חדש נרשם ומחכה לאישור שלכם:\n\nמשפחה: ${familyName}\nאימייל: ${userEmail}\n\nלאישור, היכנסו לפאנל המנהל: ${adminLink}`,
-            html
-          })
+          body: JSON.stringify({ notifyAdmin: true, pendingUser: { familyName, email: userEmail } })
         });
       } catch (err) {
         console.error('שליחת התראה למנהל נכשלה', err);
@@ -3333,7 +3291,6 @@
       if (!data.session) {
         showToast('החשבון נוצר בהצלחה! נשלח אליכם מייל לאימות הכתובת - אשרו אותו, וגם המתינו לאישור מנהל המערכת לפני שתוכלו להתחבר.');
         notifyAdminOfPendingUser(email, familyName);
-        notifyUserOfPendingRegistration(email, familyName);
         return;
       }
 
@@ -3341,7 +3298,6 @@
       if (freshProfile && freshProfile.is_approved === false) {
         await sb.auth.signOut();
         notifyAdminOfPendingUser(email, familyName);
-        notifyUserOfPendingRegistration(email, familyName);
         showToast('ההרשמה נקלטה בהצלחה! החשבון שלכם ממתין לאישור מנהל המערכת - תוכלו להתחבר ברגע שהוא יאשר אתכם.');
         return;
       }
@@ -3441,7 +3397,7 @@
           <div class="flex items-start justify-between py-4" id="item_${t.id}">
             <div class="flex flex-col gap-0.5">
               <div class="flex items-center gap-2 flex-wrap">
-                <span class="font-semibold text-slate-950">${icon} ${t.description} <span class="text-xs text-slate-400 font-medium">(${t.category || 'כללי'})</span></span>
+                <span class="font-semibold text-slate-950">${escapeHtml(icon)} ${escapeHtml(t.description)} <span class="text-xs text-slate-400 font-medium">(${escapeHtml(t.category || 'כללי')})</span></span>
                 <span class="text-xs text-slate-400">${new Date(t.timestamp).toLocaleDateString('he-IL')} • ${new Date(t.timestamp).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
               ${t.notes ? `<div class="text-[11px] text-slate-400 italic">📝 ${escapeHtml(t.notes)}</div>` : ''}
@@ -3504,12 +3460,12 @@
       Object.keys(yearlyCatTotals).forEach(cat => {
         const amt = yearlyCatTotals[cat];
         const pct = ((amt / totalYearlyExpenses) * 100).toFixed(1);
-        html += `<div class="flex justify-between text-slate-600"><span>${cat}:</span> <span class="font-medium">${currentUserCurrency}${amt.toLocaleString()} (${pct}%)</span></div>`;
+        html += `<div class="flex justify-between text-slate-600"><span>${escapeHtml(cat)}:</span> <span class="font-medium">${currentUserCurrency}${amt.toLocaleString()} (${pct}%)</span></div>`;
         if (amt > maxAmt) { maxAmt = amt; maxCat = cat; }
       });
 
       if (maxCat) {
-        html += `<div class="mt-2 text-[11px] text-indigo-600 font-semibold border-t border-dashed pt-1.5">💡 מוקד ההוצאות המרכזי השנה הוא בסטטוס: ${maxCat}</div>`;
+        html += `<div class="mt-2 text-[11px] text-indigo-600 font-semibold border-t border-dashed pt-1.5">💡 מוקד ההוצאות המרכזי השנה הוא בסטטוס: ${escapeHtml(maxCat)}</div>`;
       }
       summaryDiv.innerHTML = html;
     }
@@ -3555,16 +3511,16 @@
           let rejectBtnHtml = '';
           if (!u.isApproved) {
             approveBtnHtml = `<button onclick="approveUserAccount('${u.id}')" class="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition">✅ אשר משתמש</button>`;
-            rejectBtnHtml = `<button onclick="rejectUserAccount('${u.id}', '${(u.email || '').replace(/'/g, "\\'")}')" class="px-2.5 py-1 bg-rose-100 text-rose-700 rounded-lg text-xs font-bold hover:bg-rose-200 transition">❌ דחה</button>`;
+            rejectBtnHtml = `<button onclick="rejectUserAccount('${u.id}', '${escapeHtml((u.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" class="px-2.5 py-1 bg-rose-100 text-rose-700 rounded-lg text-xs font-bold hover:bg-rose-200 transition">❌ דחה</button>`;
           }
           let deleteBtnHtml = '';
           if (window.__adminCallerIsOwner && !u.isOwner) {
-            deleteBtnHtml = `<button onclick="deleteUserAccount('${u.id}', '${(u.email || '').replace(/'/g, "\\'")}')" class="px-2.5 py-1 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700 transition">🗑️ מחק משתמש</button>`;
+            deleteBtnHtml = `<button onclick="deleteUserAccount('${u.id}', '${escapeHtml((u.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" class="px-2.5 py-1 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700 transition">🗑️ מחק משתמש</button>`;
           }
           return `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-3 font-semibold">${u.familyName || 'ללא שם'}</td>
-            <td class="p-3 text-left font-mono" style="direction: ltr;">${u.email}</td>
+            <td class="p-3 font-semibold">${escapeHtml(u.familyName || 'ללא שם')}</td>
+            <td class="p-3 text-left font-mono" style="direction: ltr;">${escapeHtml(u.email)}</td>
             <td class="p-3 text-slate-500">${u.createdAt ? new Date(u.createdAt).toLocaleDateString('he-IL') : '-'}</td>
             <td class="p-3">${u.transactionCount}</td>
             <td class="p-3 text-slate-500">${u.lastActivity ? new Date(u.lastActivity).toLocaleDateString('he-IL') : 'אין פעילות'}</td>
@@ -3573,7 +3529,7 @@
               ${approveBtnHtml}
               ${rejectBtnHtml}
               ${toggleBtnHtml}
-              <button onclick="adminViewUserReports('${u.id}', '${(u.email || '').replace(/'/g, "\\'")}')" class="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition">📋 הצג דוחות</button>
+              <button onclick="adminViewUserReports('${u.id}', '${escapeHtml((u.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" class="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition">📋 הצג דוחות</button>
               ${deleteBtnHtml}
             </td>
           </tr>
@@ -3683,7 +3639,7 @@
         }
         tbody.innerHTML = window.__adminReportsCache.map(r => `
           <tr class="border-b">
-            <td class="p-2 font-medium">${r.report_name}</td>
+            <td class="p-2 font-medium">${escapeHtml(r.report_name)}</td>
             <td class="p-2 text-emerald-600">+${(r.total_income || 0).toLocaleString()}</td>
             <td class="p-2 text-rose-500">-${(r.total_expense || 0).toLocaleString()}</td>
             <td class="p-2 font-bold">${((r.total_income || 0) - (r.total_expense || 0)).toLocaleString()}</td>
@@ -3901,7 +3857,7 @@
       let rows = '';
       filtered.forEach(t => {
         const isExp = t.actionType.includes('הוצאה');
-        rows += `<tr class="border-b border-slate-200 text-sm"><td class="p-2 py-3">${new Date(t.timestamp).toLocaleDateString('he-IL')}</td><td class="p-2">${t.actionType}</td><td class="p-2 font-medium">${t.description}</td><td class="p-2">${t.category}</td><td class="p-2 font-bold ${isExp ? 'text-rose-600' : 'text-emerald-600'}">${isExp ? '-' : '+'}${currentUserCurrency}${parseFloat(t.amount).toLocaleString()}</td></tr>`;
+        rows += `<tr class="border-b border-slate-200 text-sm"><td class="p-2 py-3">${new Date(t.timestamp).toLocaleDateString('he-IL')}</td><td class="p-2">${t.actionType}</td><td class="p-2 font-medium">${escapeHtml(t.description)}</td><td class="p-2">${escapeHtml(t.category)}</td><td class="p-2 font-bold ${isExp ? 'text-rose-600' : 'text-emerald-600'}">${isExp ? '-' : '+'}${currentUserCurrency}${parseFloat(t.amount).toLocaleString()}</td></tr>`;
       });
       const reportArea = document.getElementById('printReportArea');
       reportArea.innerHTML = `
@@ -3914,7 +3870,7 @@
           </div>
           <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-4 mb-6">
             <div><h1 class="text-3xl font-black text-indigo-600">FamilyCent</h1></div>
-            <div><h2 class="text-lg font-bold text-slate-800">${document.getElementById('navFamilyName').innerText}</h2></div>
+            <div><h2 class="text-lg font-bold text-slate-800">${escapeHtml(document.getElementById('navFamilyName').innerText)}</h2></div>
           </div>
           <table class="w-full border-collapse text-right text-slate-700">
             <thead>
@@ -4095,7 +4051,7 @@
         
         const row = `
           <tr class="border-b border-slate-100 hover:bg-slate-50/50">
-            <td class="p-3 font-semibold text-slate-900">${r.reportName}</td>
+            <td class="p-3 font-semibold text-slate-900">${escapeHtml(r.reportName)}</td>
             <td class="p-3">${typeBadge}</td>
             <td class="p-3 text-emerald-600 font-medium">+${currentUserCurrency}${r.totalIncome.toLocaleString()}</td>
             <td class="p-3 text-rose-500 font-medium">-${currentUserCurrency}${r.totalExpense.toLocaleString()}</td>
@@ -4134,8 +4090,8 @@
         rowsHtml += `
           <tr class="border-b border-slate-200 text-xs">
             <td class="p-2 py-2">${new Date(t.timestamp).toLocaleDateString('he-IL')}</td>
-            <td class="p-2">${t.category || 'כללי'}</td>
-            <td class="p-2">${t.description}</td>
+            <td class="p-2">${escapeHtml(t.category || 'כללי')}</td>
+            <td class="p-2">${escapeHtml(t.description)}</td>
             <td class="p-2 font-bold ${isExp ? 'text-rose-600' : 'text-emerald-600'}">${isExp ? '-' : '+'}${currentUserCurrency}${parseFloat(t.amount).toLocaleString()}</td>
           </tr>
         `;
@@ -4145,7 +4101,7 @@
       Object.keys(rep.breakdown).forEach(cat => {
         breakdownHtml += `
           <div class="flex justify-between border-b border-slate-100 py-1 text-xs">
-            <span>${cat}:</span>
+            <span>${escapeHtml(cat)}:</span>
             <span class="font-bold">${currentUserCurrency}${rep.breakdown[cat].toLocaleString()}</span>
           </div>
         `;
@@ -4165,10 +4121,10 @@
           <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-3 mb-6">
             <div>
               <h1 class="text-2xl font-black text-indigo-600">FamilyCent</h1>
-              <p class="text-xs text-slate-500">${rep.reportName}</p>
+              <p class="text-xs text-slate-500">${escapeHtml(rep.reportName)}</p>
             </div>
             <div class="text-left">
-              <p class="text-[10px] text-slate-400">בעלי החשבון: ${rep.email}</p>
+              <p class="text-[10px] text-slate-400">בעלי החשבון: ${escapeHtml(rep.email)}</p>
               <p class="text-[10px] text-slate-400">תאריך הפקה: ${new Date(rep.generatedAt).toLocaleDateString('he-IL')}</p>
             </div>
           </div>
@@ -4229,10 +4185,10 @@
         const amt = parseFloat(t.amount) || 0;
         if (isExp) { totalExp += amt; catBreakdown[t.category] = (catBreakdown[t.category] || 0) + amt; }
         else { totalInc += amt; }
-        rowsHtml += `<tr class="border-b border-slate-200 text-xs"><td class="p-2 py-2">${new Date(t.timestamp).toLocaleDateString('he-IL')}</td><td class="p-2">${t.category || 'כללי'}</td><td class="p-2">${t.description}</td><td class="p-2 font-bold ${isExp ? 'text-rose-600' : 'text-emerald-600'}">${isExp ? '-' : '+'}${currentUserCurrency}${amt.toLocaleString()}</td></tr>`;
+        rowsHtml += `<tr class="border-b border-slate-200 text-xs"><td class="p-2 py-2">${new Date(t.timestamp).toLocaleDateString('he-IL')}</td><td class="p-2">${escapeHtml(t.category || 'כללי')}</td><td class="p-2">${escapeHtml(t.description)}</td><td class="p-2 font-bold ${isExp ? 'text-rose-600' : 'text-emerald-600'}">${isExp ? '-' : '+'}${currentUserCurrency}${amt.toLocaleString()}</td></tr>`;
       });
       let breakdownHtml = '';
-      Object.keys(catBreakdown).forEach(cat => { breakdownHtml += `<div class="flex justify-between border-b border-slate-100 py-1 text-xs"><span>${cat}:</span><span class="font-bold">${currentUserCurrency}${catBreakdown[cat].toLocaleString()}</span></div>`; });
+      Object.keys(catBreakdown).forEach(cat => { breakdownHtml += `<div class="flex justify-between border-b border-slate-100 py-1 text-xs"><span>${escapeHtml(cat)}:</span><span class="font-bold">${currentUserCurrency}${catBreakdown[cat].toLocaleString()}</span></div>`; });
       const net = totalInc - totalExp;
       window.__lastRawReport = { title, email: currentUserEmail, totalIncome: totalInc, totalExpense: totalExp, neto: net, breakdown: catBreakdown, reportName: title };
       const reportArea = document.getElementById('printReportArea');
@@ -4246,7 +4202,7 @@
           </div>
           <div class="flex justify-between items-center border-b-2 border-indigo-600 pb-3 mb-6">
             <div><h1 class="text-2xl font-black text-indigo-600">FamilyCent</h1><p class="text-xs text-slate-500">${title}</p></div>
-            <div class="text-left"><h2 class="text-md font-bold text-slate-800">${document.getElementById('navFamilyName').innerText}</h2></div>
+            <div class="text-left"><h2 class="text-md font-bold text-slate-800">${escapeHtml(document.getElementById('navFamilyName').innerText)}</h2></div>
           </div>
           <div class="grid grid-cols-3 gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 text-center">
             <div><span class="text-xs text-slate-500 block">סה"כ הכנסות</span><span class="text-md font-bold text-emerald-600">${currentUserCurrency}${totalInc.toLocaleString()}</span></div>
