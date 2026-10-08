@@ -2198,7 +2198,7 @@
         const financialSummary = buildFinancialSummaryText();
         const response = await fetch('/api/ai-assist', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await authHeaders(),
           body: JSON.stringify({ mode: 'advisor', question, financialSummary, history: advisorHistory, userId: currentUserId })
         });
         const data = await response.json();
@@ -2236,7 +2236,7 @@
       try {
         const response = await fetch('/api/ai-assist', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await authHeaders(),
           body: JSON.stringify({ mode: 'suggest_category', description: desc, categories: customCategories, userId: currentUserId })
         });
         const data = await response.json();
@@ -2300,7 +2300,7 @@
 
         const response = await fetch('/api/ai-assist', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await authHeaders(),
           body: JSON.stringify({ mode: 'parse_receipt', imageBase64: base64, userId: currentUserId })
         });
         const data = await response.json();
