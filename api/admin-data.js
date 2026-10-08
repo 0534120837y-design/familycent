@@ -16,7 +16,9 @@ module.exports = async function handler(req, res) {
 
   const sbHeaders = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' };
   const RESEND_KEY = process.env.RESEND_API_KEY;
-  const SITE_URL = 'https://' + (req.headers.host || 'familycent.vercel.app');
+  const SITE_URL = process.env.SITE_URL || 'https://familycent.vercel.app';
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const esc = (s) => String(s || '').slice(0, 300).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   function wrapAdminEmailHtml(title, subtitle, innerHtml) {
     return `
@@ -80,11 +82,18 @@ module.exports = async function handler(req, res) {
       if (!Array.isArray(profiles)) throw new Error('לא הצלחנו לקרוא את רשימת המשתמשים');
 
       const results = await Promise.all(profiles.map(async (p) => {
-        const txRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/transactions?user_id=eq.${p.id}&select=amount,action_type,occurred_at&order=occurred_at.desc`,
-          { headers: sbHeaders }
-        );
-        const txs = await txRes.json();
+        // קוראים את כל התנועות בדפים של 1000 (ברירת המחדל של Supabase מגבילה ל-1000 בבקשה אחת)
+        const txs = [];
+        for (let from = 0; from < 100000; from += 1000) {
+          const txRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/transactions?user_id=eq.${p.id}&select=amount,action_type,occurred_at&order=occurred_at.desc,id.asc`,
+            { headers: { ...sbHeaders, Range: `${from}-${from + 999}`, 'Range-Unit': 'items' } }
+          );
+          const page = await txRes.json();
+          if (!Array.isArray(page)) break;
+          txs.push(...page);
+          if (page.length < 1000) break;
+        }
         let totalIncome = 0, totalExpense = 0;
         (Array.isArray(txs) ? txs : []).forEach(t => {
           const amt = parseFloat(t.amount) || 0;
@@ -106,7 +115,7 @@ module.exports = async function handler(req, res) {
 
     if (mode === 'reports') {
       const userId = req.query.userId;
-      if (!userId) return res.status(400).json({ error: 'חסר userId' });
+      if (!userId || !UUID_RE.test(String(userId))) return res.status(400).json({ error: 'userId לא תקין' });
       const repRes = await fetch(`${SUPABASE_URL}/rest/v1/reports?user_id=eq.${userId}&select=*&order=created_at.desc`, { headers: sbHeaders });
       const reports = await repRes.json();
       return res.status(200).json({ reports });
@@ -118,7 +127,7 @@ module.exports = async function handler(req, res) {
       if (req.method !== 'POST') return res.status(405).json({ error: 'יש להשתמש ב-POST' });
 
       const { targetUserId, makeAdmin } = req.body || {};
-      if (!targetUserId) return res.status(400).json({ error: 'חסר targetUserId' });
+      if (!targetUserId || !UUID_RE.test(String(targetUserId))) return res.status(400).json({ error: 'targetUserId לא תקין' });
 
       const targetRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${targetUserId}&select=email`, { headers: sbHeaders });
       const targetRows = await targetRes.json();
@@ -143,7 +152,7 @@ module.exports = async function handler(req, res) {
       // כל מנהל (בעלים או משני) יכול לאשר משתמש חדש - זו פעולה עם סיכון נמוך יחסית
       if (req.method !== 'POST') return res.status(405).json({ error: 'יש להשתמש ב-POST' });
       const { targetUserId } = req.body || {};
-      if (!targetUserId) return res.status(400).json({ error: 'חסר targetUserId' });
+      if (!targetUserId || !UUID_RE.test(String(targetUserId))) return res.status(400).json({ error: 'targetUserId לא תקין' });
 
       const targetRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${targetUserId}&select=email,family_name`, { headers: sbHeaders });
       const targetRows = await targetRes.json();
@@ -161,7 +170,7 @@ module.exports = async function handler(req, res) {
 
       if (target && target.email) {
         const approveInner = `
-          <p style="font-size:14px; color:#334155; line-height:1.7;">שלום${target.family_name ? ' ' + target.family_name : ''},</p>
+          <p style="font-size:14px; color:#334155; line-height:1.7;">שלום${target.family_name ? ' ' + esc(target.family_name) : ''},</p>
           <p style="font-size:14px; color:#334155; line-height:1.7;">ההרשמה שלכם ל-FamilyCent <b style="color:#059669;">אושרה</b>! אתם יכולים להתחבר עכשיו ולהתחיל להשתמש באפליקציה.</p>
           <div style="text-align:center; margin-top:24px;">
             <a href="${SITE_URL}" style="display:inline-block; background:#059669; color:#ffffff; text-decoration:none; font-weight:700; font-size:14px; padding:12px 28px; border-radius:10px;">כניסה לאפליקציה 🎉</a>
@@ -180,21 +189,26 @@ module.exports = async function handler(req, res) {
       // כל מנהל (בעלים או משני) יכול לדחות בקשת הרשמה ממתינה
       if (req.method !== 'POST') return res.status(405).json({ error: 'יש להשתמש ב-POST' });
       const { targetUserId, reason } = req.body || {};
-      if (!targetUserId) return res.status(400).json({ error: 'חסר targetUserId' });
+      if (!targetUserId || !UUID_RE.test(String(targetUserId))) return res.status(400).json({ error: 'targetUserId לא תקין' });
 
-      const targetRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${targetUserId}&select=email,family_name`, { headers: sbHeaders });
+      const targetRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${targetUserId}&select=email,family_name,is_approved,is_admin`, { headers: sbHeaders });
       const targetRows = await targetRes.json();
       const target = Array.isArray(targetRows) && targetRows[0];
-      const targetEmail = (target && target.email || '').toLowerCase().trim();
+      if (!target) return res.status(404).json({ error: 'המשתמש לא נמצא' });
+      const targetEmail = (target.email || '').toLowerCase().trim();
       if (targetEmail === ADMIN_EMAIL) {
         return res.status(400).json({ error: 'אי אפשר לדחות את חשבון בעל האפליקציה עצמו' });
+      }
+      // דחייה מוחקת את החשבון, לכן מותרת רק על בקשת הרשמה שעדיין ממתינה (לא על משתמש מאושר או מנהל)
+      if (target.is_approved !== false || target.is_admin === true) {
+        return res.status(400).json({ error: 'אפשר לדחות רק בקשת הרשמה שעדיין ממתינה לאישור' });
       }
 
       if (target && target.email) {
         const reasonLine = reason ? `\n\nסיבה: ${reason}` : '';
-        const reasonHtml = reason ? `<div style="background:#fff1f2; border-radius:10px; padding:12px 14px; font-size:13px; color:#be123c; margin-top:10px;"><b>סיבה:</b> ${reason}</div>` : '';
+        const reasonHtml = reason ? `<div style="background:#fff1f2; border-radius:10px; padding:12px 14px; font-size:13px; color:#be123c; margin-top:10px;"><b>סיבה:</b> ${esc(reason)}</div>` : '';
         const rejectInner = `
-          <p style="font-size:14px; color:#334155; line-height:1.7;">שלום${target.family_name ? ' ' + target.family_name : ''},</p>
+          <p style="font-size:14px; color:#334155; line-height:1.7;">שלום${target.family_name ? ' ' + esc(target.family_name) : ''},</p>
           <p style="font-size:14px; color:#334155; line-height:1.7;">לצערנו בקשת ההרשמה שלכם ל-FamilyCent <b style="color:#e11d48;">לא אושרה</b>.</p>
           ${reasonHtml}`;
         await sendPlainEmail(
@@ -223,7 +237,7 @@ module.exports = async function handler(req, res) {
       if (req.method !== 'POST') return res.status(405).json({ error: 'יש להשתמש ב-POST' });
 
       const { targetUserId } = req.body || {};
-      if (!targetUserId) return res.status(400).json({ error: 'חסר targetUserId' });
+      if (!targetUserId || !UUID_RE.test(String(targetUserId))) return res.status(400).json({ error: 'targetUserId לא תקין' });
 
       const targetRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${targetUserId}&select=email`, { headers: sbHeaders });
       const targetRows = await targetRes.json();
