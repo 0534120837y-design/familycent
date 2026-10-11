@@ -8,6 +8,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="FamilyCent">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%234f46e5%22/%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%2222%22 fill=%22%23ffffff%22/%3E%3Cpath d=%22M40 24.5 A11 11 0 1 0 40 39.5%22 fill=%22none%22 stroke=%22%234f46e5%22 stroke-width=%225%22 stroke-linecap=%22round%22/%3E%3Cpath d=%22M32 17.5v29%22 stroke=%22%234f46e5%22 stroke-width=%224%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
   
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -193,12 +195,27 @@
         [/invalid login credentials/i, 'שם המשתמש או הסיסמה שגויים.'],
         [/email not confirmed/i, 'יש לאשר את כתובת האימייל לפני ההתחברות - בדקו את תיבת הדואר שלכם.'],
         [/rate limit/i, 'נשלחו יותר מדי בקשות. נסו שוב בעוד כמה דקות.'],
+        [/new password should be different/i, 'הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית.'],
+        [/password.*(weak|easy to guess|pwned|compromised)|weak password/i, 'הסיסמה חלשה מדי. בחרו סיסמה ארוכה וקשה יותר לניחוש.'],
+        [/password should contain|password.*(character|uppercase|lowercase|digit)/i, 'הסיסמה אינה עומדת בדרישות. השתמשו באותיות, מספרים ולפחות 6 תווים.'],
+        [/same.*email|email address.*already|email.*exists/i, 'כתובת האימייל הזו כבר בשימוש.'],
+        [/signup.*(disabled|not allowed)|signups not allowed/i, 'ההרשמה אינה זמינה כרגע.'],
+        [/user not found|no user found/i, 'לא נמצא משתמש עם הפרטים האלה.'],
+        [/user.*banned|user is banned/i, 'החשבון הזה נחסם. פנו למנהל המערכת.'],
+        [/(jwt|token).*(expired|invalid)|session.*(expired|missing|not found)|auth session missing|refresh token/i, 'פג תוקף ההתחברות. התחברו מחדש ונסו שוב.'],
+        [/email link is invalid or has expired|otp.*expired|link.*expired/i, 'הקישור אינו תקף או שפג תוקפו. בקשו קישור חדש.'],
+        [/for security purposes.*only request this after|too many requests|over_.*rate_limit|429/i, 'נשלחו יותר מדי בקשות. נסו שוב בעוד כמה דקות.'],
+        [/provider is not enabled|unsupported provider/i, 'שיטת ההתחברות הזו אינה פעילה כרגע.'],
+        [/failed to fetch|fetch failed|networkerror|load failed|timeout|timed out/i, 'שגיאת רשת - בדקו את החיבור לאינטרנט ונסו שוב.'],
+        [/permission denied|row-level security|not authorized|forbidden|403/i, 'אין לכם הרשאה לבצע את הפעולה הזו.'],
+        [/duplicate key|already exists/i, 'הפריט הזה כבר קיים.'],
         [/network/i, 'שגיאת רשת - בדקו את החיבור לאינטרנט ונסו שוב.']
       ];
       for (const [pattern, hebrew] of map) {
         if (pattern.test(message)) return hebrew;
       }
-      return message; // אם לא זוהתה שגיאה מוכרת, מציגים את ההודעה המקורית כברירת מחדל
+      // הודעה שכבר בעברית מוצגת כמו שהיא; הודעה באנגלית שלא זוהתה מוחלפת בהודעה כללית בעברית
+      return /[\u0590-\u05FF]/.test(String(message)) ? message : 'אירעה שגיאה. נסו שוב בעוד רגע.';
     }
 
     let currentUserEmail = '';
@@ -342,6 +359,12 @@
           <!-- טופס כניסה למערכת -->
           <div id="loginForm" class="space-y-5">
             <div id="loginAlertPlaceholder"></div>
+            <button type="button" onclick="signInWithGoogle()" class="w-full py-3 px-4 rounded-xl text-sm font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 shadow-sm transition flex items-center justify-center gap-3">
+              <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+              המשך עם Google
+            </button>
+            <div class="flex items-center gap-3 text-xs text-slate-400"><div class="flex-1 h-px bg-slate-200"></div>או<div class="flex-1 h-px bg-slate-200"></div></div>
+            
             <div>
               <label class="block text-sm font-semibold text-slate-700 mb-1">כתובת אימייל</label>
               <div class="relative">
@@ -813,6 +836,11 @@
 
       <!-- לשונית ג: פאנל מנהל מערכת -->
       <div id="tabContentAdmin" class="tab-content">
+        <div id="adminRequestsSection" class="bg-amber-50 p-5 rounded-2xl border border-amber-200 shadow-md mb-6 hidden">
+          <h3 class="font-bold text-amber-900 mb-3">📨 בקשות איפוס ושחזור ממתינות</h3>
+          <div id="adminRequestsList" class="space-y-2"></div>
+        </div>
+
         <div class="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-md mb-6">
           <h2 class="text-xl font-bold text-slate-900 mb-1">🔑 פאנל מנהל מערכת ראשי</h2>
           <p class="text-xs text-slate-500 mb-4">סקירה של כל המשפחות הרשומות באפליקציה - נתונים ודוחות.</p>
@@ -932,13 +960,21 @@
         <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3 mt-3">
           <div>
             <div class="text-sm font-semibold text-slate-800">📧 דוח חודשי אוטומטי במייל</div>
-            <div class="text-[11px] text-slate-400">קבלת סיכום מעוצב + PDF בתחילת כל חודש, על החודש שהסתיים</div>
+            <div class="text-[11px] text-slate-400">קבלת סיכום מעוצב בתחילת כל חודש, על החודש שהסתיים (והדוח נסגר ונשמר בארכיון הדוחות)</div>
           </div>
           <label class="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" id="profileMonthlyReportToggle" class="sr-only peer">
             <div class="w-11 h-6 bg-slate-300 rounded-full peer-checked:bg-indigo-600 transition-colors"></div>
             <div class="absolute top-0.5 right-0.5 bg-white w-5 h-5 rounded-full transition-transform peer-checked:-translate-x-5"></div>
           </label>
+        </div>
+      </div>
+      <div class="bg-rose-50 border border-rose-200 rounded-xl p-3 mt-3">
+        <div class="text-sm font-semibold text-rose-800">🗑️ איפוס ושחזור נתונים</div>
+        <div class="text-[11px] text-rose-700 mb-2">איפוס (מחיקת כל הנתונים והתחלה מחדש) ושחזור מבוצעים רק על ידי מנהל המערכת. אפשר לשלוח אליו בקשה, והוא יטפל בה. לפני כל איפוס נשמר גיבוי.</div>
+        <div class="flex gap-2 flex-wrap">
+          <button type="button" onclick="requestDataReset()" class="px-4 py-2 rounded-xl text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 transition">📨 בקשה לאיפוס</button>
+          <button type="button" onclick="requestDataRestore()" class="px-4 py-2 rounded-xl text-sm font-bold text-teal-800 bg-white border border-teal-300 hover:bg-teal-50 transition">📨 בקשה לשחזור</button>
         </div>
       </div>
       <div class="flex gap-3 pt-3 border-t border-slate-100 justify-end">
@@ -1098,7 +1134,19 @@
         if (session && session.user) {
           const { data: profileCheck } = await sb.from('profiles').select('is_approved').eq('id', session.user.id).single();
           if (profileCheck && profileCheck.is_approved === false) {
+            const u = session.user;
+            const isGoogle = u.app_metadata && u.app_metadata.provider === 'google';
+            const isNew = u.created_at && (Date.now() - new Date(u.created_at).getTime()) < 10 * 60 * 1000;
+            const gName = (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || '';
+            if (isGoogle && isNew) {
+              if (gName) { await sb.from('profiles').update({ family_name: gName }).eq('id', u.id); }
+              notifyAdminOfPendingUser(u.email, gName || 'ללא שם');
+            }
             await sb.auth.signOut();
+            const ph = document.getElementById('loginAlertPlaceholder');
+            if (ph) ph.innerHTML = `<div class="p-3 mb-4 bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-xl text-center">
+              החשבון שלכם ממתין לאישור מנהל המערכת. תקבלו גישה ברגע שהוא יאשר אתכם.
+            </div>`;
           } else {
             await completeLoginFlow(session.user);
           }
@@ -1703,7 +1751,7 @@
         showToast('המייל נשלח בהצלחה! 📧');
       } catch (err) {
         console.error(err);
-        showToast('שליחת המייל נכשלה: ' + err.message);
+        showToast('שליחת המייל נכשלה: ' + translateAuthError(err && err.message));
       }
     }
 
@@ -1722,7 +1770,7 @@
         showToast('המייל נשלח בהצלחה! 📧');
       } catch (err) {
         console.error(err);
-        showToast('שליחת המייל נכשלה: ' + err.message);
+        showToast('שליחת המייל נכשלה: ' + translateAuthError(err && err.message));
       }
     }
 
@@ -1938,7 +1986,7 @@
           closeReportView();
         }).catch(err => {
           console.error(err);
-          showToast('לא הצלחנו לצרף PDF (' + (err && err.message ? err.message : err) + '), שולח כתוכן מעוצב בלבד...');
+          showToast('לא הצלחנו לצרף PDF (' + translateAuthError(err && err.message ? err.message : String(err)) + '), שולח כתוכן מעוצב בלבד...');
           sendEmail(subject, text, html);
           closeReportView();
         });
@@ -2011,7 +2059,7 @@
         closeReportView();
       }).catch(err => {
         console.error(err);
-        showToast('שגיאה ביצירת קובץ ה-PDF: ' + (err && err.message ? err.message : err));
+        showToast('שגיאה ביצירת קובץ ה-PDF: ' + translateAuthError(err && err.message ? err.message : String(err)));
       });
     }
 
@@ -2049,7 +2097,7 @@
           closeReportView();
         }).catch(err => {
           console.error(err);
-          showToast('לא הצלחנו לצרף PDF (' + (err && err.message ? err.message : err) + '), שולח כתוכן מעוצב בלבד...');
+          showToast('לא הצלחנו לצרף PDF (' + translateAuthError(err && err.message ? err.message : String(err)) + '), שולח כתוכן מעוצב בלבד...');
           sendEmail(subject, bodyText, bodyHtml);
           closeReportView();
         });
@@ -2216,7 +2264,7 @@
         console.error(err);
         const thinkingEl = document.getElementById('advisorThinking');
         if (thinkingEl) thinkingEl.closest('.flex').remove();
-        responseEl.insertAdjacentHTML('beforeend', `<div class="flex justify-start"><div class="bg-rose-50 border border-rose-100 text-rose-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3">שגיאת רשת בפנייה ליועץ הפיננסי: ${err.message || err}</div></div>`);
+        responseEl.insertAdjacentHTML('beforeend', `<div class="flex justify-start"><div class="bg-rose-50 border border-rose-100 text-rose-700 text-sm rounded-2xl rounded-tr-sm px-4 py-3">שגיאת רשת בפנייה ליועץ הפיננסי: ${escapeHtml(translateAuthError(err && err.message ? err.message : String(err)))}</div></div>`);
         responseEl.scrollTop = responseEl.scrollHeight;
       } finally {
         btn.innerText = originalBtnText;
@@ -2878,7 +2926,7 @@
         closeReportView();
       }).catch(err => {
         console.error(err);
-        showToast('לא הצלחנו לצרף PDF (' + (err && err.message ? err.message : err) + '), שולח כתוכן מעוצב בלבד...');
+        showToast('לא הצלחנו לצרף PDF (' + translateAuthError(err && err.message ? err.message : String(err)) + '), שולח כתוכן מעוצב בלבד...');
         sendEmail(subject, `לוח שנה פיננסי - ${label}`, bodyHtml);
         closeReportView();
       }).finally(() => {
@@ -2900,7 +2948,7 @@
         closeReportView();
       }).catch(err => {
         console.error(err);
-        showToast('שגיאה ביצירת קובץ ה-PDF: ' + (err && err.message ? err.message : err));
+        showToast('שגיאה ביצירת קובץ ה-PDF: ' + translateAuthError(err && err.message ? err.message : String(err)));
       }).finally(() => {
         if (node && node.parentNode) node.parentNode.removeChild(node);
       });
@@ -3236,6 +3284,15 @@
       }
     }
 
+    /* התחברות / הרשמה עם חשבון Google (חשבון חדש ימתין לאישור מנהל כמו הרשמה רגילה) */
+    async function signInWithGoogle() {
+      const { error } = await sb.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin, queryParams: { prompt: 'select_account' } }
+      });
+      if (error) showToast('ההתחברות עם Google נכשלה: ' + translateAuthError(error.message));
+    }
+
     async function handleLogin() {
       const email = document.getElementById('loginEmail').value.trim().toLowerCase();
       const password = document.getElementById('loginPassword').value;
@@ -3474,6 +3531,7 @@
     async function renderAdminUsersTable() {
       const tbody = document.getElementById('adminUsersTableBody');
       if (!tbody) return;
+      loadAdminRequests();
       tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-400">טוען נתונים...</td></tr>`;
 
       try {
@@ -3529,6 +3587,7 @@
               ${approveBtnHtml}
               ${rejectBtnHtml}
               ${toggleBtnHtml}
+              <button onclick="adminRestoreUser('${u.id}', '${escapeHtml((u.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" class="px-2.5 py-1 bg-teal-600 text-white rounded-lg text-xs font-bold hover:bg-teal-700 transition">♻️ שחזור</button>
               <button onclick="adminViewUserReports('${u.id}', '${escapeHtml((u.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" class="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition">📋 הצג דוחות</button>
               ${deleteBtnHtml}
             </td>
@@ -3538,6 +3597,87 @@
       } catch (err) {
         console.error(err);
         tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-rose-500">שגיאת רשת בטעינת הנתונים</td></tr>`;
+      }
+    }
+
+    /* בקשות איפוס ושחזור ממתינות (מנהל בלבד) */
+    async function loadAdminRequests() {
+      const box = document.getElementById('adminRequestsSection');
+      const list = document.getElementById('adminRequestsList');
+      if (!box || !list) return;
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        const res = await fetch('/api/admin-data?mode=requests', { headers: { Authorization: `Bearer ${session.access_token}` } });
+        const data = await res.json();
+        if (!res.ok || !Array.isArray(data.requests) || data.requests.length === 0) { box.classList.add('hidden'); list.innerHTML = ''; return; }
+        box.classList.remove('hidden');
+        list.innerHTML = data.requests.map(r => {
+          const isReset = r.type === 'reset';
+          const emailJs = escapeHtml((r.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+          const actionBtn = isReset
+            ? `<button onclick="adminApproveReset('${r.id}', '${emailJs}')" class="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700">✅ בצע איפוס</button>`
+            : `<button onclick="adminRestoreUser('${r.user_id}', '${emailJs}', '${r.id}')" class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold hover:bg-teal-700">♻️ שחזר</button>`;
+          return `<div class="bg-white border border-amber-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="text-sm">
+              <b>${isReset ? '🗑️ בקשה לאיפוס' : '♻️ בקשה לשחזור'}</b> · ${escapeHtml(r.familyName || '')} <span class="font-mono text-xs text-slate-500" style="direction:ltr;display:inline-block">${escapeHtml(r.email)}</span>
+              <div class="text-[11px] text-slate-500">${new Date(r.created_at).toLocaleString('he-IL')}${isReset ? (r.keep_reports === false ? ' · כולל מחיקת הדוחות' : ' · הדוחות נשמרים') : ''}</div>
+              ${r.note ? `<div class="text-xs text-slate-700 mt-1">הערה: ${escapeHtml(r.note)}</div>` : ''}
+            </div>
+            <div class="flex gap-2">${actionBtn}<button onclick="adminRejectRequest('${r.id}')" class="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-300">❌ דחה</button></div>
+          </div>`;
+        }).join('');
+      } catch (err) { console.error(err); box.classList.add('hidden'); }
+    }
+
+    async function adminApproveReset(requestId, userEmail) {
+      if (!confirm(`לבצע איפוס מלא לנתוני ${userEmail}? לפני המחיקה יישמר גיבוי שאפשר לשחזר ממנו.`)) return;
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        const res = await fetch('/api/admin-data?mode=approveReset', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ requestId }) });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error || 'האיפוס נכשל'); return; }
+        showToast('האיפוס בוצע, והגיבוי נשמר.');
+        renderAdminUsersTable();
+      } catch (err) { console.error(err); showToast('שגיאת רשת באיפוס.'); }
+    }
+
+    async function adminRejectRequest(requestId) {
+      if (!confirm('לדחות את הבקשה?')) return;
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        const res = await fetch('/api/admin-data?mode=rejectRequest', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ requestId }) });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error || 'הפעולה נכשלה'); return; }
+        showToast('הבקשה נדחתה.');
+        loadAdminRequests();
+      } catch (err) { console.error(err); showToast('שגיאת רשת.'); }
+    }
+
+    /* שחזור נתוני משתמש מגיבוי (נוצר אוטומטית לפני איפוס, ולפני כל שחזור) */
+    async function adminRestoreUser(userId, userEmail, requestId) {
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        const hdr = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` };
+        const res = await fetch(`/api/admin-data?mode=backups&userId=${encodeURIComponent(userId)}`, { headers: hdr });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error || 'שגיאה בטעינת הגיבויים'); return; }
+        const list = data.backups || [];
+        if (list.length === 0) { showToast('אין גיבויים שמורים עבור המשתמש הזה.'); return; }
+        const reasons = { reset: 'לפני איפוס', 'pre-restore': 'לפני שחזור' };
+        const lines = list.map((b, i) => `${i + 1}) ${new Date(b.created_at).toLocaleString('he-IL')} - ${reasons[b.reason] || b.reason} - ${b.counts.transactions} תנועות, ${b.counts.budgets} תקציבים, ${b.counts.goals} יעדים`).join('\n');
+        const pick = prompt(`גיבויים של ${userEmail}:\n\n${lines}\n\nהקלידו את מספר הגיבוי לשחזור:`);
+        if (!pick) return;
+        const idx = parseInt(pick, 10) - 1;
+        if (!(idx >= 0 && idx < list.length)) { showToast('מספר לא תקין.'); return; }
+        if (!confirm(`השחזור יחליף את כל הנתונים הנוכחיים של ${userEmail} בנתוני הגיבוי שבחרתם. לפני כן יישמר גיבוי של המצב הנוכחי.\n\nלשחזר?`)) return;
+        const r2 = await fetch('/api/admin-data?mode=restoreUser', { method: 'POST', headers: hdr, body: JSON.stringify({ targetUserId: userId, backupId: list[idx].id, requestId: requestId || undefined }) });
+        const d2 = await r2.json();
+        if (!r2.ok) { showToast(d2.error || 'השחזור נכשל'); return; }
+        showToast('הנתונים שוחזרו בהצלחה.');
+        renderAdminUsersTable();
+      } catch (err) {
+        console.error(err);
+        showToast('שגיאת רשת בשחזור.');
       }
     }
 
@@ -3803,6 +3943,36 @@
       document.getElementById('profileModal').classList.remove('hidden');
     }
     
+    /* בקשה לאיפוס או לשחזור: נשלחת למנהל המערכת, והוא מבצע */
+    async function submitDataRequest(type, keepReports, note) {
+      const { error } = await sb.from('data_requests').insert({ user_id: currentUserId, type, keep_reports: keepReports, note: note || null });
+      if (error) {
+        if (error.code === '23505') { showToast('כבר שלחתם בקשה כזו והיא ממתינה לטיפול המנהל.'); return; }
+        console.error(error);
+        showToast('שליחת הבקשה נכשלה. נסו שוב מאוחר יותר.');
+        return;
+      }
+      try {
+        fetch('/api/send-email', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ adminRequest: type }) });
+      } catch (e) { console.error(e); }
+      showToast('הבקשה נשלחה למנהל המערכת. תקבלו עדכון ברגע שהיא תטופל.');
+    }
+
+    async function requestDataReset() {
+      if (!currentUserId) return;
+      if (!confirm('לשלוח למנהל המערכת בקשה לאיפוס? האיפוס מוחק את כל התנועות, התקציבים, היעדים, הפעולות הקבועות והכרטיסים שלכם ומתחיל דף חדש. לפני המחיקה נשמר גיבוי.')) return;
+      const keepReports = confirm('לשמור את הדוחות הסגורים בארכיון הדוחות?\n\nאישור = לשמור את הדוחות\nביטול = למחוק גם אותם');
+      const note = prompt('אפשר להוסיף הערה למנהל (אופציונלי):') || '';
+      await submitDataRequest('reset', keepReports, note.slice(0, 300));
+    }
+
+    async function requestDataRestore() {
+      if (!currentUserId) return;
+      if (!confirm('לשלוח למנהל המערכת בקשה לשחזר את הנתונים שלכם מהגיבוי האחרון?')) return;
+      const note = prompt('אפשר להוסיף הערה למנהל (אופציונלי):') || '';
+      await submitDataRequest('restore', true, note.slice(0, 300));
+    }
+
     function closeProfileModal() { document.getElementById('profileModal').classList.add('hidden'); }
 
     async function updateProfileData() {
@@ -3818,7 +3988,8 @@
 
       if (password) {
         const { error: pwError } = await sb.auth.updateUser({ password });
-        if (pwError) { showToast('הפרטים עודכנו, אבל עדכון הסיסמה נכשל: ' + pwError.message); }
+        // אם הסיסמה שהוקלדה זהה לנוכחית - אין מה לעדכן, ולא מציגים שגיאה
+        if (pwError && !/different from the old password/i.test(pwError.message || '')) { showToast('הפרטים עודכנו, אבל עדכון הסיסמה נכשל: ' + translateAuthError(pwError.message)); }
       }
 
       currentUserRawData = { ...currentUserRawData, family_name: familyName, phone, monthly_report_enabled: monthlyReportEnabled };
@@ -3895,44 +4066,50 @@
       renderAndPrintRawReport(title, tFiltered);
     }
 
+    /* סגירת דוחות אוטומטית: לכל חודש וכל שנה שהסתיימו ויש בהם תנועות ואין להם עדיין דוח - נוצר דוח בארכיון.
+       הבדיקה מבוססת על הנתונים עצמם (ולא על זיכרון הדפדפן), ולכן עובדת מכל מכשיר. בנוסף השרת סוגר דוח לבד בכל 1 בחודש. */
     async function checkAndAutoGenerateReports() {
-      const now = new Date();
-      let currentMonth = now.getMonth(); 
-      let currentYear = now.getFullYear();
-      
-      let lastCheckedMonth = localStorage.getItem(`fc_last_month_check_${currentUserEmail}`);
-      let lastCheckedYear = localStorage.getItem(`fc_last_year_check_${currentUserEmail}`);
-      
-      if (lastCheckedMonth !== null) {
-        let lastM = parseInt(lastCheckedMonth);
-        let lastY = parseInt(localStorage.getItem(`fc_last_month_year_check_${currentUserEmail}`) || currentYear);
-        
-        if (currentMonth !== lastM || currentYear !== lastY) {
-          let targetMonth = lastM;
-          let targetYear = lastY;
-          
-          while (targetYear < currentYear || (targetYear === currentYear && targetMonth < currentMonth)) {
-            await buildAndSaveReportToArchive('month', targetMonth, targetYear);
-            targetMonth++;
-            if (targetMonth > 11) { targetMonth = 0; targetYear++; }
-          }
+      try {
+        const now = new Date();
+        const curM = now.getMonth(), curY = now.getFullYear();
+        const monthNames = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+        const groups = {}; // "m-y" או "y-y" -> תנועות
+        localTransactions.forEach(tx => {
+          if (!tx.timestamp) return;
+          const d = new Date(tx.timestamp);
+          const m = d.getMonth(), y = d.getFullYear();
+          if (y > curY || (y === curY && m >= curM)) return; // החודש הנוכחי עדיין פתוח
+          (groups[`month-${m}-${y}`] = groups[`month-${m}-${y}`] || []).push(tx);
+          if (y < curY) (groups[`year-0-${y}`] = groups[`year-0-${y}`] || []).push(tx);
+        });
+        const exists = new Set(generatedReports.map(r => `${r.reportType}-${r.targetMonth}-${r.targetYear}`));
+        const rows = [];
+        Object.keys(groups).forEach(key => {
+          if (exists.has(key)) return;
+          const [type, m, y] = key.split('-'); const month = parseInt(m), year = parseInt(y);
+          const txs = groups[key];
+          let income = 0, expense = 0; const breakdown = {};
+          txs.forEach(tx => {
+            const amt = parseFloat(tx.amount) || 0;
+            if (tx.actionType && tx.actionType.includes('הוצאה')) { expense += amt; breakdown[tx.category] = (breakdown[tx.category] || 0) + amt; }
+            else income += amt;
+          });
+          rows.push({
+            user_id: currentUserId,
+            report_name: type === 'month' ? `דוח סגור חודש ${monthNames[month]} ${year}` : `דוח סיכום שנתי כולל ${year}`,
+            report_type: type, target_month: month, target_year: year,
+            total_income: income, total_expense: expense, neto: income - expense,
+            breakdown, transactions_snapshot: txs
+          });
+        });
+        if (rows.length > 0) {
+          const { error } = await sb.from('reports').insert(rows);
+          if (error) console.error('סגירת דוחות אוטומטית נכשלה', error);
+          else await loadUserReports();
         }
+      } catch (err) {
+        console.error('שגיאה בסגירת דוחות אוטומטית', err);
       }
-      
-      if (lastCheckedYear !== null) {
-        let lastY = parseInt(lastCheckedYear);
-        if (currentYear > lastY) {
-          for (let y = lastY; y < currentYear; y++) {
-            await buildAndSaveReportToArchive('year', 0, y);
-          }
-        }
-      }
-      
-      localStorage.setItem(`fc_last_month_check_${currentUserEmail}`, currentMonth);
-      localStorage.setItem(`fc_last_month_year_check_${currentUserEmail}`, currentYear);
-      localStorage.setItem(`fc_last_year_check_${currentUserEmail}`, currentYear);
-      
-      await loadUserReports();
     }
 
     /* לוגיקה מעודכנת להפקה ידנית בעזרת מודל (Modal) מעוצב */
