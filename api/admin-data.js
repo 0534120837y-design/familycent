@@ -293,6 +293,28 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    if (mode === 'pending') {
+      // קריאה קלה לחלון ההתראות של המנהל: משתמשים שממתינים לאישור + בקשות איפוס/שחזור פתוחות
+      const [uRes, rRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/profiles?is_approved=eq.false&select=id,email,family_name,created_at&order=created_at.asc`, { headers: sbHeaders }),
+        fetch(`${SUPABASE_URL}/rest/v1/data_requests?status=eq.pending&select=id,user_id,type,note,created_at&order=created_at.asc`, { headers: sbHeaders })
+      ]);
+      const users = await uRes.json();
+      const reqRows = await rRes.json();
+      const reqs = Array.isArray(reqRows) ? reqRows : [];
+      const ids = [...new Set(reqs.map(x => x.user_id))].filter(id => UUID_RE.test(String(id)));
+      const profMap = {};
+      if (ids.length) {
+        const pr = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=in.(${ids.join(',')})&select=id,email,family_name`, { headers: sbHeaders });
+        const pRows = await pr.json();
+        if (Array.isArray(pRows)) pRows.forEach(p => { profMap[p.id] = p; });
+      }
+      return res.status(200).json({
+        users: Array.isArray(users) ? users.map(u => ({ id: u.id, email: u.email, familyName: u.family_name, createdAt: u.created_at })) : [],
+        requests: reqs.map(x => ({ id: x.id, type: x.type, note: x.note, createdAt: x.created_at, email: (profMap[x.user_id] || {}).email || '', familyName: (profMap[x.user_id] || {}).family_name || '' }))
+      });
+    }
+
     if (mode === 'requests') {
       const r = await fetch(`${SUPABASE_URL}/rest/v1/data_requests?status=eq.pending&select=id,user_id,type,keep_reports,note,created_at&order=created_at.asc`, { headers: sbHeaders });
       const rows = await r.json();
