@@ -174,7 +174,7 @@
       const toast = document.createElement('div');
       toast.className = `max-w-sm w-full sm:w-auto px-4 py-3 rounded-xl shadow-2xl text-sm font-semibold text-white text-center sm:text-right flex items-center gap-2 ${isError ? 'bg-rose-600 border-2 border-rose-300' : 'bg-slate-900'}`;
       toast.style.animation = 'toastIn 0.25s ease-out';
-      toast.innerHTML = `${isError ? '<span style="font-size:16px;">⚠️</span>' : ''}<span>${message.replace(/</g, '&lt;')}</span>`;
+      toast.innerHTML = `<span style="font-size:16px;">${isError ? '⚠️' : '✅'}</span><span>${message.replace(/</g, '&lt;')}</span>`;
       container.appendChild(toast);
       setTimeout(() => {
         toast.style.transition = 'opacity 0.3s, transform 0.3s';
@@ -184,6 +184,60 @@
       }, isError ? 5000 : 3200);
     }
     /* --- סוף הודעות Toast --- */
+
+    /* --- חלונות דו-שיח מעוצבים במקום confirm() / prompt() של הדפדפן --- */
+    function uiDialog(opts) {
+      return new Promise((resolve) => {
+        const danger = !!opts.danger;
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 z-[10000] flex items-center justify-center p-4';
+        overlay.style.cssText = 'background:rgba(15,23,42,.55);backdrop-filter:blur(4px);direction:rtl;animation:toastIn .18s ease-out';
+        const iconBg = danger ? 'bg-rose-100' : 'bg-indigo-100';
+        const okCls = danger ? 'bg-rose-600 hover:bg-rose-700' : 'bg-indigo-600 hover:bg-indigo-700';
+        const box = document.createElement('div');
+        box.className = 'bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden';
+        box.setAttribute('role', 'dialog');
+        box.innerHTML = `
+          <div class="p-6">
+            <div class="flex items-start gap-3">
+              <div class="shrink-0 w-11 h-11 rounded-full ${iconBg} flex items-center justify-center text-xl">${opts.icon || (danger ? '⚠️' : '❓')}</div>
+              <div class="flex-1 min-w-0">
+                ${opts.title ? `<div class="font-bold text-slate-900 text-base mb-1">${escapeHtml(opts.title)}</div>` : ''}
+                <div class="text-sm text-slate-600 leading-relaxed whitespace-pre-line break-words" style="max-height:45vh;overflow:auto">${escapeHtml(opts.message || '')}</div>
+              </div>
+            </div>
+            ${opts.input ? `<input id="uiDialogInput" type="text" class="mt-4 w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" value="${escapeHtml(opts.defaultValue == null ? '' : opts.defaultValue)}">` : ''}
+          </div>
+          <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex gap-2 justify-end">
+            <button type="button" id="uiDialogCancel" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 transition">${escapeHtml(opts.cancelText || 'ביטול')}</button>
+            <button type="button" id="uiDialogOk" class="px-5 py-2 rounded-xl text-sm font-bold text-white ${okCls} shadow-sm transition">${escapeHtml(opts.okText || 'אישור')}</button>
+          </div>`;
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        const input = box.querySelector('#uiDialogInput');
+        const done = (val) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(val); };
+        const onOk = () => done(opts.input ? input.value : true);
+        const onCancel = () => done(opts.input ? null : false);
+        const onKey = (e) => {
+          if (e.key === 'Escape' && opts.dismissable !== false) { e.preventDefault(); onCancel(); }
+          else if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+        };
+        box.querySelector('#uiDialogOk').addEventListener('click', onOk);
+        box.querySelector('#uiDialogCancel').addEventListener('click', onCancel);
+        if (opts.dismissable !== false) overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) onCancel(); });
+        document.addEventListener('keydown', onKey, true);
+        setTimeout(() => (input || box.querySelector('#uiDialogOk')).focus(), 30);
+      });
+    }
+    function uiConfirm(message, options) {
+      const danger = /למחוק|מחיקת|מחק|ידרוס|יימחקו|לצמיתות|איפוס|לדחות/.test(String(message));
+      return uiDialog({ message, danger, ...(options || {}) });
+    }
+    function uiPrompt(message, defaultValue, options) {
+      return uiDialog({ message, input: true, defaultValue, icon: '✏️', ...(options || {}) });
+    }
+    /* --- סוף חלונות דו-שיח --- */
+
 
     /* --- מתרגם הודעות שגיאה נפוצות מ-Supabase (מגיעות באנגלית) לעברית ברורה --- */
     function translateAuthError(message) {
@@ -1250,7 +1304,7 @@
       renderSavingsGoals();
     }
     async function addFundsToGoal(id) {
-      const amt = parseFloat(prompt('כמה כסף להוסיף ליעד זה?'));
+      const amt = parseFloat(await uiPrompt('כמה כסף להוסיף ליעד זה?'));
       if (!amt || amt <= 0) return;
       const g = userGoalRows.find(x => x.id === id);
       if (!g) return;
@@ -1261,7 +1315,7 @@
       renderSavingsGoals();
     }
     async function deleteSavingsGoal(id) {
-      if (!confirm('האם למחוק יעד חיסכון זה?')) return;
+      if (!(await uiConfirm('האם למחוק יעד חיסכון זה?'))) return;
       const { error } = await sb.from('goals').delete().eq('id', id);
       if (error) { console.error(error); showToast('שגיאה במחיקת היעד.'); return; }
       userGoalRows = userGoalRows.filter(g => g.id !== id);
@@ -1307,7 +1361,7 @@
     }
 
     async function deleteCreditCard(id) {
-      if (!confirm('למחוק כרטיס זה? תנועות ששויכו אליו יישארו, אך יאבדו את השיוך.')) return;
+      if (!(await uiConfirm('למחוק כרטיס זה? תנועות ששויכו אליו יישארו, אך יאבדו את השיוך.'))) return;
       const { error } = await sb.from('credit_cards').delete().eq('id', id);
       if (error) { console.error(error); showToast('שגיאה במחיקת הכרטיס.'); return; }
       userCreditCardRows = userCreditCardRows.filter(c => c.id !== id);
@@ -1397,7 +1451,7 @@
       }));
     }
     async function deleteRecurring(id) {
-      if (!confirm('למחוק פעולה קבועה זו? (פעולות שכבר נוצרו בעבר לא יימחקו)')) return;
+      if (!(await uiConfirm('למחוק פעולה קבועה זו? (פעולות שכבר נוצרו בעבר לא יימחקו)'))) return;
       const { error } = await sb.from('recurring').delete().eq('id', id);
       if (error) { console.error(error); showToast('שגיאה במחיקה.'); return; }
       userRecurringRows = userRecurringRows.filter(r => r.id !== id);
@@ -1458,8 +1512,8 @@
       document.getElementById('addBudgetForm').classList.add('hidden');
     }
 
-    function editBudgetAmount(cat, currentLimit) {
-      const newAmount = prompt(`עדכון תקציב חודשי עבור "${cat}":`, currentLimit);
+    async function editBudgetAmount(cat, currentLimit) {
+      const newAmount = await uiPrompt(`עדכון תקציב חודשי עבור "${cat}":`, currentLimit);
       if (newAmount === null) return;
       saveCategoryBudget(cat, newAmount);
     }
@@ -2465,7 +2519,7 @@
 
     async function confirmExcelImport() {
       if (pendingImportRows.length === 0) return;
-      if (!confirm(`לייבא ${pendingImportRows.length} תנועות לתקציב שלכם?`)) return;
+      if (!(await uiConfirm(`לייבא ${pendingImportRows.length} תנועות לתקציב שלכם?`))) return;
 
       const { error } = await sb.from('transactions').insert(pendingImportRows);
       if (error) { console.error(error); showToast('שגיאה בייבוא התנועות. נסו שוב.'); return; }
@@ -2511,11 +2565,11 @@
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }
-    function importFullBackup(fileInputEl) {
+    async function importFullBackup(fileInputEl) {
       const file = fileInputEl.files[0];
       if (!file) return;
       const excluded = ['fc_users', 'fc_transactions'];
-      if (!confirm('ייבוא גיבוי ידרוס את ההגדרות המקומיות הקיימות בדפדפן זה (חיבורי מייל/AI, מצב כהה). הנתונים הכספיים עצמם שמורים בענן ולא יושפעו. להמשיך?')) { fileInputEl.value = ''; return; }
+      if (!(await uiConfirm('ייבוא גיבוי ידרוס את ההגדרות המקומיות הקיימות בדפדפן זה (חיבורי מייל/AI, מצב כהה). הנתונים הכספיים עצמם שמורים בענן ולא יושפעו. להמשיך?'))) { fileInputEl.value = ''; return; }
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
@@ -3031,6 +3085,63 @@
     let isCurrentUserAdmin = false;
 
     /* --- בודק מול השרת (בצורה מאובטחת) האם המשתמש הנוכחי הוא בעל האפליקציה, ומציג/מסתיר את כפתור פאנל המנהל בהתאם --- */
+    /* --- חלון קופץ למנהל: בקשות שממתינות לטיפול (משתמשים חדשים, בקשות איפוס ושחזור) --- */
+    window.__seenAdminItems = window.__seenAdminItems || new Set();
+    async function checkAdminPending() {
+      if (!isCurrentUserAdmin || document.getElementById('adminPendingPopup')) return;
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        if (!session) return;
+        const res = await fetch('/api/admin-data?mode=pending', { headers: { Authorization: `Bearer ${session.access_token}` } });
+        if (!res.ok) return;
+        const data = await res.json();
+        const items = [];
+        (data.users || []).forEach(u => items.push({ key: 'user:' + u.id, icon: '🆕', title: 'משתמש חדש ממתין לאישור', detail: `${u.familyName || 'ללא שם'} · ${u.email || ''}` }));
+        (data.requests || []).forEach(q => items.push({ key: 'req:' + q.id, icon: q.type === 'reset' ? '🗑️' : '♻️', title: q.type === 'reset' ? 'בקשה לאיפוס נתונים' : 'בקשה לשחזור נתונים', detail: `${q.familyName || ''} · ${q.email || ''}${q.note ? ' · "' + q.note + '"' : ''}` }));
+        const fresh = items.filter(i => !window.__seenAdminItems.has(i.key));
+        items.forEach(i => window.__seenAdminItems.add(i.key));
+        if (fresh.length === 0) return;
+        showAdminPendingPopup(items, new Set(fresh.map(i => i.key)));
+      } catch (err) { console.error(err); }
+    }
+
+    function showAdminPendingPopup(items, freshKeys) {
+      const overlay = document.createElement('div');
+      overlay.id = 'adminPendingPopup';
+      overlay.className = 'fixed inset-0 z-[10000] flex items-center justify-center p-4';
+      overlay.style.cssText = 'background:rgba(15,23,42,.55);backdrop-filter:blur(4px);direction:rtl;animation:toastIn .2s ease-out';
+      const rows = items.map(i => `
+        <div class="flex items-start gap-3 p-3 rounded-xl border ${freshKeys.has(i.key) ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}">
+          <div class="text-xl leading-none mt-0.5">${i.icon}</div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-bold text-slate-900">${escapeHtml(i.title)}${freshKeys.has(i.key) ? ' <span class="text-[10px] bg-amber-500 text-white rounded-full px-2 py-0.5 mr-1">חדש</span>' : ''}</div>
+            <div class="text-xs text-slate-600 break-words">${escapeHtml(i.detail)}</div>
+          </div>
+        </div>`).join('');
+      overlay.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+          <div class="bg-gradient-to-l from-indigo-600 to-violet-600 text-white px-6 py-4">
+            <div class="text-lg font-extrabold">🔔 ממתינות לטיפול שלך</div>
+            <div class="text-xs opacity-90">${items.length} ${items.length === 1 ? 'בקשה' : 'בקשות'} מחכות בפאנל המנהל</div>
+          </div>
+          <div class="p-5 space-y-2 overflow-auto" style="max-height:50vh">${rows}</div>
+          <div class="px-5 py-4 bg-slate-50 border-t border-slate-100 flex gap-2 justify-end">
+            <button type="button" id="adminPendingClose" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 transition">אטפל אחר כך</button>
+            <button type="button" id="adminPendingGo" class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">מעבר לפאנל המנהל</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const close = () => overlay.remove();
+      overlay.querySelector('#adminPendingClose').addEventListener('click', close);
+      overlay.querySelector('#adminPendingGo').addEventListener('click', () => { close(); switchTab('admin'); });
+      overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+    }
+
+    function startAdminPendingPoll() {
+      if (window.__adminPendingTimer) return;
+      window.__adminPendingTimer = setInterval(() => { if (document.visibilityState === 'visible') checkAdminPending(); }, 90000);
+    }
+
     async function checkAdminAccess() {
       try {
         const { data: { session } } = await sb.auth.getSession();
@@ -3139,7 +3250,7 @@
       const val = select.value;
       if (!val) return;
       if (customCategories.length <= 1) { showToast('חייבת להישאר לפחות קטגוריה אחת במערכת.'); return; }
-      if (!confirm(`האם למחוק את הקטגוריה "${val}"? (הפעולות הקיימות לא יימחקו)`)) return;
+      if (!(await uiConfirm(`האם למחוק את הקטגוריה "${val}"? (הפעולות הקיימות לא יימחקו)`))) return;
 
       const row = userCategoryRows.find(r => r.name === val);
       if (row) {
@@ -3154,7 +3265,7 @@
     }
 
     async function forgotPassword() {
-      const email = prompt("הזן את כתובת האימייל של החשבון שלך לשחזור סיסמה:");
+      const email = await uiPrompt("הזן את כתובת האימייל של החשבון שלך לשחזור סיסמה:");
       if (!email) return;
       const normalizedEmail = email.trim().toLowerCase();
       const { error } = await sb.auth.resetPasswordForEmail(normalizedEmail);
@@ -3264,6 +3375,7 @@
       await loadTransactionsLocal();
       checkAndAutoGenerateReports();
       await checkAdminAccess();
+      if (isCurrentUserAdmin) { checkAdminPending(); startAdminPendingPoll(); }
       // אם המשתמש הגיע מקישור ישיר לפאנל המנהל (למשל מתוך מייל התראה), ועברו את בדיקת ההרשאה - נעביר אותם ישר לשם
       if (window.location.hash === '#admin' && isCurrentUserAdmin) {
         switchTab('admin');
@@ -3630,7 +3742,7 @@
     }
 
     async function adminApproveReset(requestId, userEmail) {
-      if (!confirm(`לבצע איפוס מלא לנתוני ${userEmail}? לפני המחיקה יישמר גיבוי שאפשר לשחזר ממנו.`)) return;
+      if (!(await uiConfirm(`לבצע איפוס מלא לנתוני ${userEmail}? לפני המחיקה יישמר גיבוי שאפשר לשחזר ממנו.`))) return;
       try {
         const { data: { session } } = await sb.auth.getSession();
         const res = await fetch('/api/admin-data?mode=approveReset', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ requestId }) });
@@ -3642,7 +3754,7 @@
     }
 
     async function adminRejectRequest(requestId) {
-      if (!confirm('לדחות את הבקשה?')) return;
+      if (!(await uiConfirm('לדחות את הבקשה?'))) return;
       try {
         const { data: { session } } = await sb.auth.getSession();
         const res = await fetch('/api/admin-data?mode=rejectRequest', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ requestId }) });
@@ -3665,11 +3777,11 @@
         if (list.length === 0) { showToast('אין גיבויים שמורים עבור המשתמש הזה.'); return; }
         const reasons = { reset: 'לפני איפוס', 'pre-restore': 'לפני שחזור' };
         const lines = list.map((b, i) => `${i + 1}) ${new Date(b.created_at).toLocaleString('he-IL')} - ${reasons[b.reason] || b.reason} - ${b.counts.transactions} תנועות, ${b.counts.budgets} תקציבים, ${b.counts.goals} יעדים`).join('\n');
-        const pick = prompt(`גיבויים של ${userEmail}:\n\n${lines}\n\nהקלידו את מספר הגיבוי לשחזור:`);
+        const pick = await uiPrompt(`גיבויים של ${userEmail}:\n\n${lines}\n\nהקלידו את מספר הגיבוי לשחזור:`);
         if (!pick) return;
         const idx = parseInt(pick, 10) - 1;
         if (!(idx >= 0 && idx < list.length)) { showToast('מספר לא תקין.'); return; }
-        if (!confirm(`השחזור יחליף את כל הנתונים הנוכחיים של ${userEmail} בנתוני הגיבוי שבחרתם. לפני כן יישמר גיבוי של המצב הנוכחי.\n\nלשחזר?`)) return;
+        if (!(await uiConfirm(`השחזור יחליף את כל הנתונים הנוכחיים של ${userEmail} בנתוני הגיבוי שבחרתם. לפני כן יישמר גיבוי של המצב הנוכחי.\n\nלשחזר?`))) return;
         const r2 = await fetch('/api/admin-data?mode=restoreUser', { method: 'POST', headers: hdr, body: JSON.stringify({ targetUserId: userId, backupId: list[idx].id, requestId: requestId || undefined }) });
         const d2 = await r2.json();
         if (!r2.ok) { showToast(d2.error || 'השחזור נכשל'); return; }
@@ -3700,7 +3812,7 @@
     }
 
     async function rejectUserAccount(targetUserId, targetEmail) {
-      const reason = prompt(`מדוע אתם דוחים את בקשת ההרשמה של ${targetEmail}? (אופציונלי - ניתן להשאיר ריק)\n\nשימו לב: דחייה תמחק את החשבון הזה לצמיתות ותשלח למשתמש מייל עדכון.`);
+      const reason = await uiPrompt(`מדוע אתם דוחים את בקשת ההרשמה של ${targetEmail}? (אופציונלי - ניתן להשאיר ריק)\n\nשימו לב: דחייה תמחק את החשבון הזה לצמיתות ותשלח למשתמש מייל עדכון.`);
       if (reason === null) return; // המנהל לחץ "ביטול"
       try {
         const { data: { session } } = await sb.auth.getSession();
@@ -3720,7 +3832,7 @@
     }
 
     async function deleteUserAccount(targetUserId, targetEmail) {
-      if (!confirm(`למחוק לצמיתות את המשתמש ${targetEmail}?\nכל הנתונים שלו (תנועות, דוחות, תקציבים, כרטיסים) יימחקו יחד איתו. פעולה זו בלתי הפיכה.`)) return;
+      if (!(await uiConfirm(`למחוק לצמיתות את המשתמש ${targetEmail}?\nכל הנתונים שלו (תנועות, דוחות, תקציבים, כרטיסים) יימחקו יחד איתו. פעולה זו בלתי הפיכה.`))) return;
       try {
         const { data: { session } } = await sb.auth.getSession();
         const res = await fetch('/api/admin-data?mode=deleteUser', {
@@ -3883,7 +3995,7 @@
     }
 
     async function deleteTransaction(id) {
-      if (!confirm("האם למחוק פעולה זו לצמיתות?")) return;
+      if (!(await uiConfirm("האם למחוק פעולה זו לצמיתות?"))) return;
       const { error } = await sb.from('transactions').delete().eq('id', id);
       if (error) { console.error(error); showToast('שגיאה במחיקת הפעולה. נסו שוב.'); return; }
       localTransactions = localTransactions.filter(t => t.id !== id);
@@ -3892,6 +4004,9 @@
 
     async function logout() {
       await sb.auth.signOut();
+      if (window.__adminPendingTimer) { clearInterval(window.__adminPendingTimer); window.__adminPendingTimer = null; }
+      window.__seenAdminItems = new Set();
+      const pendingPopup = document.getElementById('adminPendingPopup'); if (pendingPopup) pendingPopup.remove();
       currentUserEmail = ''; currentUserId = null; localTransactions = []; currentUserRawData = {}; generatedReports = [];
       userBudgetRows = []; userGoalRows = []; userRecurringRows = []; userCategoryRows = [];
       document.getElementById('loginEmail').value = ''; 
@@ -3960,16 +4075,16 @@
 
     async function requestDataReset() {
       if (!currentUserId) return;
-      if (!confirm('לשלוח למנהל המערכת בקשה לאיפוס? האיפוס מוחק את כל התנועות, התקציבים, היעדים, הפעולות הקבועות והכרטיסים שלכם ומתחיל דף חדש. לפני המחיקה נשמר גיבוי.')) return;
-      const keepReports = confirm('לשמור את הדוחות הסגורים בארכיון הדוחות?\n\nאישור = לשמור את הדוחות\nביטול = למחוק גם אותם');
-      const note = prompt('אפשר להוסיף הערה למנהל (אופציונלי):') || '';
+      if (!(await uiConfirm('לשלוח למנהל המערכת בקשה לאיפוס? האיפוס מוחק את כל התנועות, התקציבים, היעדים, הפעולות הקבועות והכרטיסים שלכם ומתחיל דף חדש. לפני המחיקה נשמר גיבוי.'))) return;
+      const keepReports = await uiConfirm('לשמור את הדוחות הסגורים בארכיון הדוחות?', { okText: 'לשמור את הדוחות', cancelText: 'למחוק גם אותם', dismissable: false });
+      const note = await uiPrompt('אפשר להוסיף הערה למנהל (אופציונלי):') || '';
       await submitDataRequest('reset', keepReports, note.slice(0, 300));
     }
 
     async function requestDataRestore() {
       if (!currentUserId) return;
-      if (!confirm('לשלוח למנהל המערכת בקשה לשחזר את הנתונים שלכם מהגיבוי האחרון?')) return;
-      const note = prompt('אפשר להוסיף הערה למנהל (אופציונלי):') || '';
+      if (!(await uiConfirm('לשלוח למנהל המערכת בקשה לשחזר את הנתונים שלכם מהגיבוי האחרון?'))) return;
+      const note = await uiPrompt('אפשר להוסיף הערה למנהל (אופציונלי):') || '';
       await submitDataRequest('restore', true, note.slice(0, 300));
     }
 
@@ -4156,7 +4271,7 @@
       const existingRow = generatedReports.find(r => r.reportType === type && r.targetMonth === month && r.targetYear === year);
       
       if (existingRow && !isManual) return; 
-      if (existingRow && isManual && !confirm("דוח עבור תקופה זו כבר קיים בארכיון. האם להפיק אותו מחדש ולעדכן את הסכומים?")) return;
+      if (existingRow && isManual && !(await uiConfirm("דוח עבור תקופה זו כבר קיים בארכיון. האם להפיק אותו מחדש ולעדכן את הסכומים?"))) return;
 
       let periodTxs = localTransactions.filter(t => {
         const d = new Date(t.timestamp);
@@ -4348,7 +4463,7 @@
     }
 
     async function deleteArchivedReport(reportId) {
-      if (!confirm("האם למחוק דוח מאורכב זה מהרשימה? (פעולה זו לא תמחק את התנועות עצמן בלוח הראשי)")) return;
+      if (!(await uiConfirm("האם למחוק דוח מאורכב זה מהרשימה? (פעולה זו לא תמחק את התנועות עצמן בלוח הראשי)"))) return;
       const { error } = await sb.from('reports').delete().eq('id', reportId);
       if (error) { console.error(error); showToast('שגיאה במחיקת הדוח.'); return; }
       generatedReports = generatedReports.filter(r => r.id !== reportId);
