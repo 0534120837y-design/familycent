@@ -143,7 +143,7 @@ module.exports = async function handler(req, res) {
       });
       if (!updateRes.ok) {
         const errText = await updateRes.text();
-        return res.status(500).json({ error: 'עדכון הרשאות נכשל: ' + errText });
+        return res.status(500).json({ error: 'עדכון הרשאות נכשל' });
       }
       return res.status(200).json({ success: true });
     }
@@ -165,7 +165,7 @@ module.exports = async function handler(req, res) {
       });
       if (!updateRes.ok) {
         const errText = await updateRes.text();
-        return res.status(500).json({ error: 'אישור המשתמש נכשל: ' + errText });
+        return res.status(500).json({ error: 'אישור המשתמש נכשל' });
       }
 
       if (target && target.email) {
@@ -226,7 +226,7 @@ module.exports = async function handler(req, res) {
       });
       if (!deleteRes.ok) {
         const errText = await deleteRes.text();
-        return res.status(500).json({ error: 'דחיית המשתמש נכשלה: ' + errText });
+        return res.status(500).json({ error: 'דחיית המשתמש נכשלה' });
       }
       return res.status(200).json({ success: true });
     }
@@ -253,7 +253,154 @@ module.exports = async function handler(req, res) {
       });
       if (!deleteRes.ok) {
         const errText = await deleteRes.text();
-        return res.status(500).json({ error: 'מחיקת המשתמש נכשלה: ' + errText });
+        return res.status(500).json({ error: 'מחיקת המשתמש נכשלה' });
+      }
+      return res.status(200).json({ success: true });
+    }
+
+    const BACKUP_TABLES = ['credit_cards', 'categories', 'budgets', 'goals', 'recurring', 'reports', 'transactions'];
+
+    async function getAllRows(path) {
+      const rows = [];
+      for (let from = 0; from < 200000; from += 1000) {
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: { ...sbHeaders, Range: `${from}-${from + 999}`, 'Range-Unit': 'items' } });
+        const page = await r.json();
+        if (!Array.isArray(page)) throw new Error('קריאה מהמסד נכשלה');
+        rows.push(...page);
+        if (page.length < 1000) break;
+      }
+      return rows;
+    }
+
+    if (mode === 'backups') {
+      const userId = req.query.userId;
+      if (!userId || !UUID_RE.test(String(userId))) return res.status(400).json({ error: 'userId לא תקין' });
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/backups?user_id=eq.${userId}&select=id,created_at,reason,data&order=created_at.desc&limit=10`, { headers: sbHeaders });
+      const rows = await r.json();
+      if (!Array.isArray(rows)) return res.status(500).json({ error: 'לא ניתן לקרוא גיבויים. ודאו שטבלת הגיבויים נוצרה.' });
+      const backups = rows.map(b => {
+        const counts = {};
+        BACKUP_TABLES.forEach(tb => { counts[tb] = Array.isArray(b.data && b.data[tb]) ? b.data[tb].length : 0; });
+        return { id: b.id, created_at: b.created_at, reason: b.reason, counts };
+      });
+      return res.status(200).json({ backups });
+    }
+
+    async function markRequest(id, status) {
+      await fetch(`${SUPABASE_URL}/rest/v1/data_requests?id=eq.${id}`, {
+        method: 'PATCH', headers: { ...sbHeaders, Prefer: 'return=minimal' },
+        body: JSON.stringify({ status, handled_at: new Date().toISOString() })
+      });
+    }
+
+    if (mode === 'requests') {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/data_requests?status=eq.pending&select=id,user_id,type,keep_reports,note,created_at&order=created_at.asc`, { headers: sbHeaders });
+      const rows = await r.json();
+      if (!Array.isArray(rows)) return res.status(500).json({ error: 'לא ניתן לקרוא בקשות. ודאו שטבלת הבקשות נוצרה.' });
+      const ids = [...new Set(rows.map(x => x.user_id))].filter(id => UUID_RE.test(String(id)));
+      let profMap = {};
+      if (ids.length) {
+        const pr = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=in.(${ids.join(',')})&select=id,email,family_name`, { headers: sbHeaders });
+        const pRows = await pr.json();
+        if (Array.isArray(pRows)) pRows.forEach(p => { profMap[p.id] = p; });
+      }
+      return res.status(200).json({ requests: rows.map(x => ({ ...x, email: (profMap[x.user_id] || {}).email || '', familyName: (profMap[x.user_id] || {}).family_name || '' })) });
+    }
+
+    if (mode === 'rejectRequest') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'יש להשתמש ב-POST' });
+      const { requestId } = req.body || {};
+      if (!requestId || !UUID_RE.test(String(requestId))) return res.status(400).json({ error: 'requestId לא תקין' });
+      await markRequest(requestId, 'rejected');
+      return res.status(200).json({ success: true });
+    }
+
+    if (mode === 'approveReset') {
+      // איפוס מתבצע רק על בסיס בקשה פתוחה של המשתמש עצמו, ואחרי גיבוי אוטומטי
+      if (req.method !== 'POST') return res.status(405).json({ error: 'יש להשתמש ב-POST' });
+      const { requestId } = req.body || {};
+      if (!requestId || !UUID_RE.test(String(requestId))) return res.status(400).json({ error: 'requestId לא תקין' });
+      const rr = await fetch(`${SUPABASE_URL}/rest/v1/data_requests?id=eq.${requestId}&status=eq.pending&type=eq.reset&select=user_id,keep_reports`, { headers: sbHeaders });
+      const rrRows = await rr.json();
+      const reqRow = Array.isArray(rrRows) && rrRows[0];
+      if (!reqRow) return res.status(404).json({ error: 'בקשת האיפוס לא נמצאה או שכבר טופלה' });
+      const uid = reqRow.user_id;
+      if (!UUID_RE.test(String(uid))) return res.status(400).json({ error: 'משתמש לא תקין' });
+
+      const snap = {};
+      for (const tb of BACKUP_TABLES) snap[tb] = await getAllRows(`${tb}?user_id=eq.${uid}&select=*`);
+      const sv = await fetch(`${SUPABASE_URL}/rest/v1/backups`, {
+        method: 'POST', headers: { ...sbHeaders, Prefer: 'return=minimal' },
+        body: JSON.stringify({ user_id: uid, reason: 'reset', data: snap })
+      });
+      if (!sv.ok) return res.status(500).json({ error: 'לא ניתן ליצור גיבוי, ולכן האיפוס בוטל.' });
+
+      const toDelete = ['transactions', 'recurring', 'budgets', 'goals', 'categories', 'credit_cards'];
+      if (reqRow.keep_reports === false) toDelete.push('reports');
+      for (const tb of toDelete) {
+        const d = await fetch(`${SUPABASE_URL}/rest/v1/${tb}?user_id=eq.${uid}`, { method: 'DELETE', headers: sbHeaders });
+        if (!d.ok) { console.error('reset delete failed', tb, await d.text()); return res.status(500).json({ error: 'האיפוס נכשל באמצע. הגיבוי נשמר ואפשר לשחזר ממנו.' }); }
+      }
+      await markRequest(requestId, 'done');
+      return res.status(200).json({ success: true });
+    }
+
+    if (mode === 'restoreUser') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'יש להשתמש ב-POST' });
+      const { targetUserId, backupId, requestId } = req.body || {};
+      if (!targetUserId || !UUID_RE.test(String(targetUserId))) return res.status(400).json({ error: 'targetUserId לא תקין' });
+      if (!backupId || !UUID_RE.test(String(backupId))) return res.status(400).json({ error: 'backupId לא תקין' });
+
+      // הגיבוי חייב להיות שייך לאותו משתמש בדיוק
+      const bRes = await fetch(`${SUPABASE_URL}/rest/v1/backups?id=eq.${backupId}&user_id=eq.${targetUserId}&select=data`, { headers: sbHeaders });
+      const bRows = await bRes.json();
+      if (!Array.isArray(bRows) || !bRows[0] || !bRows[0].data) return res.status(404).json({ error: 'הגיבוי לא נמצא' });
+      const data = bRows[0].data;
+
+      // 1. גיבוי של המצב הנוכחי, כדי שאפשר יהיה לחזור אחורה
+      const current = {};
+      for (const tb of BACKUP_TABLES) current[tb] = await getAllRows(`${tb}?user_id=eq.${targetUserId}&select=*`);
+      const saveRes = await fetch(`${SUPABASE_URL}/rest/v1/backups`, {
+        method: 'POST', headers: { ...sbHeaders, Prefer: 'return=minimal' },
+        body: JSON.stringify({ user_id: targetUserId, reason: 'pre-restore', data: current })
+      });
+      if (!saveRes.ok) return res.status(500).json({ error: 'לא ניתן לשמור גיבוי של המצב הנוכחי, ולכן השחזור בוטל.' });
+
+      // 2. מחיקת הנתונים הנוכחיים
+      for (const tb of ['transactions', 'recurring', 'reports', 'budgets', 'goals', 'categories', 'credit_cards']) {
+        const d = await fetch(`${SUPABASE_URL}/rest/v1/${tb}?user_id=eq.${targetUserId}`, { method: 'DELETE', headers: sbHeaders });
+        if (!d.ok) { console.error('restore delete failed', tb, await d.text()); return res.status(500).json({ error: 'השחזור נכשל באמצע המחיקה. המצב הקודם נשמר בגיבוי.' }); }
+      }
+
+      // 3. הכנסת נתוני הגיבוי (מזהים חדשים; כרטיסי האשראי ממופים מחדש)
+      const cardIdMap = {};
+      const prepare = (row) => { const c = { ...row }; delete c.id; c.user_id = targetUserId; return c; };
+      for (const tb of BACKUP_TABLES) {
+        const src = Array.isArray(data[tb]) ? data[tb] : [];
+        for (let i = 0; i < src.length; i += 500) {
+          const chunk = src.slice(i, i + 500);
+          const rows = chunk.map(r => {
+            const c = prepare(r);
+            if (tb !== 'credit_cards' && 'card_id' in c) c.card_id = c.card_id ? (cardIdMap[c.card_id] || null) : null;
+            return c;
+          });
+          const ins = await fetch(`${SUPABASE_URL}/rest/v1/${tb}`, {
+            method: 'POST', headers: { ...sbHeaders, Prefer: tb === 'credit_cards' ? 'return=representation' : 'return=minimal' },
+            body: JSON.stringify(rows)
+          });
+          if (!ins.ok) { console.error('restore insert failed', tb, await ins.text()); return res.status(500).json({ error: 'השחזור נכשל בטבלה ' + tb + '. המצב הקודם נשמר בגיבוי ואפשר לשחזר ממנו.' }); }
+          if (tb === 'credit_cards') {
+            const created = await ins.json();
+            chunk.forEach((old, k) => { if (old.id && created[k]) cardIdMap[old.id] = created[k].id; });
+          }
+        }
+      }
+      if (requestId && UUID_RE.test(String(requestId))) {
+        // מסמן כמטופלת רק בקשת שחזור פתוחה של אותו משתמש
+        await fetch(`${SUPABASE_URL}/rest/v1/data_requests?id=eq.${requestId}&user_id=eq.${targetUserId}&type=eq.restore&status=eq.pending`, {
+          method: 'PATCH', headers: { ...sbHeaders, Prefer: 'return=minimal' },
+          body: JSON.stringify({ status: 'done', handled_at: new Date().toISOString() })
+        });
       }
       return res.status(200).json({ success: true });
     }
@@ -261,6 +408,6 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'mode לא מוכר' });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'admin-data נכשל: ' + err.message });
+    return res.status(500).json({ error: 'הפעולה נכשלה. נסו שוב.' });
   }
 }
