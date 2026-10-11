@@ -10,6 +10,11 @@
     }
   ],
   "functions": {
-    "api/monthly-report.js": { "maxDuration": 60 }
+    "api/monthly-report.js": {
+      "maxDuration": 60
+    },
+    "api/cron-reports.js": {
+      "maxDuration": 60
+    }
   }
 }
