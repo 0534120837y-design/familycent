@@ -2,6 +2,10 @@
 // משתמשת ב-SUPABASE_SERVICE_ROLE_KEY (מפתח שרת סודי, לא ה-anon key הציבורי) כדי לקרוא נתונים של כל המשתמשים.
 module.exports = async function handler(req, res) {
   // אבטחה: מוודאים שהקריאה מגיעה מ-Vercel Cron ולא מגורם חיצוני
+  // חשוב: אם CRON_SECRET לא מוגדר ב-Vercel, הקריאה נחסמת (קודם הערך "Bearer undefined" היה עובר)
+  if (!process.env.CRON_SECRET) {
+    return res.status(500).json({ error: 'CRON_SECRET לא מוגדר בהגדרות הפרויקט ב-Vercel' });
+  }
   const authHeader = req.headers.authorization;
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -18,7 +22,7 @@ module.exports = async function handler(req, res) {
   const sbHeaders = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' };
 
   try {
-    const profilesRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=id,email,family_name,currency`, { headers: sbHeaders });
+    const profilesRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=id,email,family_name,currency,is_approved`, { headers: sbHeaders });
     const profiles = await profilesRes.json();
 
     const now = new Date();
@@ -27,6 +31,7 @@ module.exports = async function handler(req, res) {
 
     for (const profile of profiles) {
       if (!profile.email) continue;
+      if (profile.is_approved === false) continue; // לא שולחים למשתמשים שעדיין לא אושרו
       const currency = profile.currency || '₪';
 
       const budgetsRes = await fetch(`${SUPABASE_URL}/rest/v1/budgets?user_id=eq.${profile.id}&select=*`, { headers: sbHeaders });
@@ -79,6 +84,8 @@ module.exports = async function handler(req, res) {
         })
       });
       if (sendRes.ok) sentCount++;
+      else console.error('Resend error for', profile.email, await sendRes.text());
+      await new Promise(r => setTimeout(r, 650)); // מגבלת קצב של Resend
     }
 
     return res.status(200).json({ success: true, checked: profiles.length, sent: sentCount });
