@@ -8,5 +8,8 @@
       "path": "/api/monthly-report",
       "schedule": "0 6 1 * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/monthly-report.js": { "maxDuration": 60 }
+  }
 }
