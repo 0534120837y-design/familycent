@@ -32,13 +32,24 @@ module.exports = async function handler(req, res) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'RESEND_API_KEY לא מוגדר בהגדרות הפרויקט ב-Vercel' });
 
-  const { subject, text, html, attachment, notifyAdmin, pendingUser } = req.body || {};
+  const { subject, text, html, attachment, notifyAdmin, pendingUser, adminRequest } = req.body || {};
   const from = process.env.RESEND_FROM || 'FamilyCent <onboarding@resend.dev>';
   let payload;
 
   const user = await getUserFromToken(req);
 
-  if (user && user.email && !notifyAdmin) {
+  if (user && user.email && adminRequest) {
+    // משתמש מחובר שלח בקשת איפוס/שחזור: ההתראה נשלחת למנהל, והתוכן נקבע בשרת (הכתובת נלקחת מהטוקן)
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (!adminEmail) return res.status(500).json({ error: 'ADMIN_EMAIL לא מוגדר' });
+    const label = adminRequest === 'reset' ? 'איפוס נתונים' : adminRequest === 'restore' ? 'שחזור נתונים' : null;
+    if (!label) return res.status(400).json({ error: 'סוג בקשה לא תקין' });
+    payload = {
+      from, to: [adminEmail],
+      subject: `FamilyCent - בקשה ל${label}`,
+      html: `<div dir="rtl" style="font-family:Arial,sans-serif;font-size:14px;line-height:1.7">המשתמש <b>${esc(user.email)}</b> שלח בקשה ל<b>${label}</b>.<br><br><a href="${process.env.SITE_URL || ''}/#admin">מעבר לפאנל המנהל לטיפול בבקשה</a></div>`
+    };
+  } else if (user && user.email && !notifyAdmin) {
     // משתמש מחובר: המייל נשלח תמיד לכתובת שלו בלבד, בלי קשר לשדה "to" שהלקוח שלח
     if (!subject || (!text && !html)) return res.status(400).json({ error: 'חסרים פרטים (subject / text או html)' });
     if (html && String(html).length > MAX_HTML) return res.status(413).json({ error: 'התוכן גדול מדי' });
