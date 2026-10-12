@@ -1,37 +1,44 @@
 // api/ivr.js
 //
 // שירות הטלפוניה (IVR) של FamilyCent — מתחבר ל"ימות המשיח" דרך מודול ה-API שלהם.
+// גרסה ללא תלויות חיצוניות: מדבר עם Supabase ישירות דרך REST (fetch מובנה ב-Node 18+).
 //
-// חשוב להבין: זו פונקציית Vercel Serverless, כלומר "חסרת מצב" (stateless) —
-// כל קריאה היא עצמאית לחלוטין ולא "זוכרת" את הקריאה הקודמת. לכן כל ה"הקשות"
-// (בחירת תפריט, סכום, סוג פעולה) נאספות ע"י ימות עצמו (שלוחות "שאלה" רגילות
-// בפאנל הניהול), וה-API נקרא פעם אחת בלבד, בסוף, עם כל הנתונים כפרמטרים.
-// ראו את מדריך ההגדרה שנשלח בצ'אט להסבר המלא על מבנה השלוחות.
-
-const { createClient } = require('@supabase/supabase-js');
+// הפונקציה "חסרת מצב" (stateless): ימות אוסף את כל ההקשות בשלוחות "שאלה" רגילות,
+// וקורא ל-API פעם אחת בלבד, בסוף, עם כל הנתונים כפרמטרים.
 
 const SUPABASE_URL = 'https://unkrcsdymaggkruzeorc.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-const supabaseAdmin = SUPABASE_SERVICE_ROLE_KEY
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-  : null;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // ---------------------------------------------------------------------
 // עזרים
 // ---------------------------------------------------------------------
 
-// משאיר רק ספרות, ולוקח את 9 הספרות האחרונות - כדי שהשוואת מספרי טלפון
-// תעבוד גם אם יש הבדלים בפורמט (עם/בלי אפס מוביל, עם/בלי 972 בהתחלה וכו')
-function normalizePhone(raw) {
-  if (!raw) return '';
-  const digits = String(raw).replace(/\D/g, '');
-  return digits.slice(-9);
+async function sb(path, options = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Supabase ${res.status}: ${text}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
-// שם הפרמטר שבו ימות שולח את מספר הטלפון של המתקשר משתנה בין הגדרות/גרסאות.
-// בודקים כמה שמות אפשריים כדי לא להיתקע על זה - ואפשר לוודא את השם המדויק
-// דרך מצב ה-debug (ראו בהמשך).
+// משאיר רק ספרות ולוקח את 9 הספרות האחרונות, כדי שהשוואת טלפונים תעבוד
+// גם עם הבדלי פורמט (אפס מוביל, 972 וכו')
+function normalizePhone(raw) {
+  if (!raw) return '';
+  return String(raw).replace(/\D/g, '').slice(-9);
+}
+
+// שם הפרמטר שבו ימות שולח את מספר המתקשר משתנה; בודקים כמה אפשרויות.
 function extractCallerPhone(params) {
   const candidates = ['ApiPhone', 'Phone', 'phone', 'ApiDID', 'CallerID', 'ApiCallerID'];
   for (const key of candidates) {
@@ -51,65 +58,50 @@ function isExpense(actionType) {
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
 
-  const params = { ...(req.query || {}), ...(req.body || {}) };
-
-  // מצב דיבאג: גולשים לכתובת .../api/ivr?debug=1 בדפדפן (בלי צורך בטלפון)
-  // כדי לראות בדיוק אילו פרמטרים מגיעים, ולוודא את שם שדה הטלפון האמיתי.
-  if (params.debug === '1') {
-    return res.status(200).send(JSON.stringify(params, null, 2));
-  }
-
-  if (!supabaseAdmin) {
-    console.error('חסר משתנה סביבה SUPABASE_SERVICE_ROLE_KEY');
-    return res.status(200).send('אירעה תקלה בהגדרות השרת. אנא פנו לתמיכה.');
-  }
-
-  const action = params.action || 'menu';
-
-  // תפריט הפתיחה לא צריך זיהוי משתמש - רק מקריא את האפשרויות.
-  // (שימושי בעיקר לבדיקה; בפועל ההודעה הזו יכולה להיות גם קובץ TTS/הקלטה בימות עצמו)
-  if (action === 'menu') {
-    return res.status(200).send(
-      'שלום, ברוכים הבאים למרכז המשפחה. ' +
-      'להאזנה ליתרה החודשית הקישו 1. ' +
-      'לדיווח הוצאה או הכנסה חדשה הקישו 2. ' +
-      'לשמיעת התנועות האחרונות הקישו 3.'
-    );
-  }
-
-  const callerPhone = normalizePhone(extractCallerPhone(params));
-  if (!callerPhone) {
-    return res.status(200).send('לא זוהה מספר הטלפון של המתקשר. אנא פנו לתמיכה.');
-  }
-
-  let profile;
   try {
-    profile = await findProfileByPhone(callerPhone);
-  } catch (err) {
-    console.error(err);
-    return res.status(200).send('אירעה שגיאה בזיהוי החשבון. נסו שוב מאוחר יותר.');
-  }
+    const params = { ...(req.query || {}), ...(req.body && typeof req.body === 'object' ? req.body : {}) };
 
-  if (!profile) {
-    return res.status(200).send(
-      'מספר הטלפון שממנו התקשרתם אינו רשום במערכת. ' +
-      'יש להזין את המספר הזה בהגדרות הפרופיל באתר, ולהתקשר שוב מאותו מספר.'
-    );
-  }
+    // מצב דיבאג: .../api/ivr?debug=1 מחזיר את כל הפרמטרים שהתקבלו
+    if (params.debug === '1') {
+      return res.status(200).send(JSON.stringify(params, null, 2));
+    }
 
-  const currency = profile.currency || '₪';
-  const userId = profile.id;
+    const action = params.action || 'menu';
 
-  try {
-    if (action === 'balance') {
-      return res.status(200).send(await getBalanceMessage(userId, currency));
+    if (action === 'menu') {
+      return res.status(200).send(
+        'שלום, ברוכים הבאים למרכז המשפחה. ' +
+        'להאזנה ליתרה החודשית הקישו 1. ' +
+        'לדיווח הוצאה או הכנסה חדשה הקישו 2. ' +
+        'לשמיעת התנועות האחרונות הקישו 3.'
+      );
     }
-    if (action === 'recent') {
-      return res.status(200).send(await getRecentMessage(userId));
+
+    if (!SERVICE_KEY) {
+      console.error('חסר משתנה סביבה SUPABASE_SERVICE_ROLE_KEY');
+      return res.status(200).send('אירעה תקלה בהגדרות השרת. אנא פנו לתמיכה.');
     }
-    if (action === 'report') {
-      return res.status(200).send(await reportTransaction(userId, params));
+
+    const callerPhone = normalizePhone(extractCallerPhone(params));
+    if (!callerPhone) {
+      return res.status(200).send('לא זוהה מספר הטלפון של המתקשר. אנא פנו לתמיכה.');
     }
+
+    const profile = await findProfileByPhone(callerPhone);
+    if (!profile) {
+      return res.status(200).send(
+        'מספר הטלפון שממנו התקשרתם אינו רשום במערכת. ' +
+        'יש להזין את המספר הזה בהגדרות הפרופיל באתר, ולהתקשר שוב מאותו מספר.'
+      );
+    }
+
+    const currency = profile.currency || '₪';
+    const userId = profile.id;
+
+    if (action === 'balance') return res.status(200).send(await getBalanceMessage(userId, currency));
+    if (action === 'recent') return res.status(200).send(await getRecentMessage(userId));
+    if (action === 'report') return res.status(200).send(await reportTransaction(userId, params));
+
     return res.status(200).send('פעולה לא מוכרת.');
   } catch (err) {
     console.error(err);
@@ -122,33 +114,22 @@ module.exports = async (req, res) => {
 // ---------------------------------------------------------------------
 
 async function findProfileByPhone(callerPhone) {
-  // שולפים את כל הפרופילים עם טלפון מוגדר, ומשווים לאחר נירמול -
-  // כי מספרי טלפון יכולים להישמר בפורמטים שונים (0501234567 / +972501234567 וכו')
-  const { data, error } = await supabaseAdmin
-    .from('profiles')
-    .select('id, currency, phone')
-    .not('phone', 'is', null);
-
-  if (error) throw error;
-
-  return (data || []).find(p => normalizePhone(p.phone) === callerPhone) || null;
+  const rows = await sb('profiles?select=id,currency,phone&phone=not.is.null');
+  return (rows || []).find(p => normalizePhone(p.phone) === callerPhone) || null;
 }
 
 async function getBalanceMessage(userId, currency) {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-  const { data, error } = await supabaseAdmin
-    .from('transactions')
-    .select('amount, action_type, occurred_at')
-    .eq('user_id', userId)
-    .gte('occurred_at', monthStart);
-
-  if (error) throw error;
+  const rows = await sb(
+    `transactions?select=amount,action_type,occurred_at&user_id=eq.${encodeURIComponent(userId)}` +
+    `&occurred_at=gte.${encodeURIComponent(monthStart)}`
+  );
 
   let income = 0;
   let expense = 0;
-  for (const t of (data || [])) {
+  for (const t of (rows || [])) {
     const amt = parseFloat(t.amount) || 0;
     if (isExpense(t.action_type)) expense += amt; else income += amt;
   }
@@ -163,20 +144,16 @@ async function getBalanceMessage(userId, currency) {
 }
 
 async function getRecentMessage(userId) {
-  const { data, error } = await supabaseAdmin
-    .from('transactions')
-    .select('amount, action_type, description, occurred_at')
-    .eq('user_id', userId)
-    .order('occurred_at', { ascending: false })
-    .limit(5);
+  const rows = await sb(
+    `transactions?select=amount,action_type,description,occurred_at&user_id=eq.${encodeURIComponent(userId)}` +
+    `&order=occurred_at.desc&limit=5`
+  );
 
-  if (error) throw error;
-
-  if (!data || data.length === 0) {
+  if (!rows || rows.length === 0) {
     return 'לא נמצאו תנועות בחשבון שלכם.';
   }
 
-  const parts = data.map(t => {
+  const parts = rows.map(t => {
     const kind = isExpense(t.action_type) ? 'הוצאה' : 'הכנסה';
     const amt = Math.round(parseFloat(t.amount) || 0);
     const desc = t.description ? `, ${t.description}` : '';
@@ -187,7 +164,7 @@ async function getRecentMessage(userId) {
 }
 
 async function reportTransaction(userId, params) {
-  // type: '1' = הוצאה, '2' = הכנסה (מוקש בשלוחת ה"שאלה" השנייה בימות)
+  // type: '1' = הוצאה, '2' = הכנסה (מוקש בשלוחת ה"שאלה" בימות)
   const rawAmount = parseFloat(params.amount);
   const typeDigit = String(params.type || '1');
 
@@ -197,15 +174,17 @@ async function reportTransaction(userId, params) {
 
   const actionType = typeDigit === '2' ? 'הכנסה 📈' : 'הוצאה 📉';
 
-  const { error } = await supabaseAdmin.from('transactions').insert({
-    user_id: userId,
-    action_type: actionType,
-    amount: rawAmount,
-    description: 'דווח טלפונית',
-    category: '💰 כללי'
+  await sb('transactions', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      user_id: userId,
+      action_type: actionType,
+      amount: rawAmount,
+      description: 'דווח טלפונית',
+      category: '💰 כללי'
+    })
   });
-
-  if (error) throw error;
 
   const kindHeb = typeDigit === '2' ? 'הכנסה' : 'הוצאה';
   return `נרשמה ${kindHeb} על סך ${Math.round(rawAmount)} בהצלחה. תודה שהתקשרתם למרכז המשפחה.`;
