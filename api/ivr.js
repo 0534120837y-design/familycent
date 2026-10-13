@@ -99,12 +99,8 @@ module.exports = async (req, res) => {
         console.error('ברכה אישית נכשלה:', e.message);
       }
       const hello = name ? `שלום ${name}` : 'שלום';
-      return res.status(200).send(
-        hello + ', ברוכים הבאים למרכז המשפחה. ' +
-        'להאזנה ליתרה החודשית הקישו 1. ' +
-        'לדיווח הוצאה או הכנסה חדשה הקישו 2. ' +
-        'לשמיעת התנועות האחרונות הקישו 3.'
-      );
+      // רק ברכה: את אפשרויות התפריט (1/2/3) משמיעה שלוחת התפריט בימות עצמו
+      return res.status(200).send(hello + ', ברוכים הבאים למרכז המשפחה.');
     }
 
     if (!SERVICE_KEY) {
@@ -130,6 +126,8 @@ module.exports = async (req, res) => {
 
     if (action === 'balance') return res.status(200).send(await getBalanceMessage(userId, currency));
     if (action === 'recent') return res.status(200).send(await getRecentMessage(userId));
+    if (action === 'add_income') return res.status(200).send(await reportTransaction(userId, params, 'income'));
+    if (action === 'add_expense') return res.status(200).send(await reportTransaction(userId, params, 'expense'));
     if (action === 'report') return res.status(200).send(await reportTransaction(userId, params));
 
     console.log('פעולה לא מוכרת:', JSON.stringify(params));
@@ -166,12 +164,13 @@ async function getBalanceMessage(userId, currency) {
   }
 
   const balance = income - expense;
-  const balanceText = Math.round(Math.abs(balance)).toString();
+  const r = n => Math.round(Math.abs(n)).toString();
 
-  if (balance >= 0) {
-    return `היתרה שלכם החודש היא ${balanceText} ${currency}, ביתרת זכות.`;
-  }
-  return `שימו לב, החודש אתם ביתרת חובה של ${balanceText} ${currency}.`;
+  const balancePart = balance >= 0
+    ? `היתרה ${r(balance)} ${currency}`
+    : `אתם ביתרת חובה של ${r(balance)} ${currency}`;
+
+  return `החודש ההכנסות שלכם הן ${r(income)} ${currency}. ההוצאות ${r(expense)} ${currency}. ${balancePart}.`;
 }
 
 async function getRecentMessage(userId) {
@@ -194,16 +193,30 @@ async function getRecentMessage(userId) {
   return `הנה חמש התנועות האחרונות שלכם: ${parts.join('. ')}.`;
 }
 
-async function reportTransaction(userId, params) {
-  // type: '1' = הוצאה, '2' = הכנסה (מוקש בשלוחת ה"שאלה" בימות)
-  const rawAmount = parseFloat(params.amount);
-  const typeDigit = String(params.type || '1');
+// קטגוריות קבועות לשלב 1 (תואמות לברירות המחדל באתר). ספרה -> שם הקטגוריה
+const EXPENSE_CATEGORIES = {
+  '1': { name: '🛒 סופרמרקט', spoken: 'מזון' },
+  '2': { name: '🚗 תחבורה', spoken: 'תחבורה' },
+  '3': { name: '🏠 מדור וחשבונות', spoken: 'דיור וחשבונות' },
+  '4': { name: '💰 כללי', spoken: 'כללי' }
+};
 
+async function reportTransaction(userId, params, forcedKind) {
+  // forcedKind: 'income' / 'expense' (מהכתובת של השלוחה).
+  // בלי forcedKind (תאימות לאחור): params.type '2' = הכנסה, אחרת הוצאה.
+  const isIncome = forcedKind
+    ? forcedKind === 'income'
+    : String(params.type || '1') === '2';
+
+  const rawAmount = parseFloat(params.amount);
   if (!rawAmount || rawAmount <= 0) {
-    return 'הסכום שהוקש אינו תקין. אנא נסו לדווח שוב.';
+    return 'הסכום שהוקש אינו תקין. אנא נסו שוב.';
   }
 
-  const actionType = typeDigit === '2' ? 'הכנסה 📈' : 'הוצאה 📉';
+  const actionType = isIncome ? 'הכנסה 📈' : 'הוצאה 📉';
+
+  // קטגוריה נשאלת רק בהוצאה; בהכנסה וכשלא הוקשה קטגוריה תקינה - "כללי"
+  const cat = (!isIncome && EXPENSE_CATEGORIES[String(params.category || '').trim()]) || EXPENSE_CATEGORIES['4'];
 
   await sb('transactions', {
     method: 'POST',
@@ -213,10 +226,11 @@ async function reportTransaction(userId, params) {
       action_type: actionType,
       amount: rawAmount,
       description: 'דווח טלפונית',
-      category: '💰 כללי'
+      category: cat.name
     })
   });
 
-  const kindHeb = typeDigit === '2' ? 'הכנסה' : 'הוצאה';
-  return `נרשמה ${kindHeb} על סך ${Math.round(rawAmount)} בהצלחה. תודה שהתקשרתם למרכז המשפחה.`;
+  const kindHeb = isIncome ? 'הכנסה' : 'הוצאה';
+  const catPart = isIncome ? '' : ` בקטגוריית ${cat.spoken}`;
+  return `נרשמה ${kindHeb} בסך ${Math.round(rawAmount)} שקלים${catPart}.`;
 }
