@@ -66,6 +66,12 @@ module.exports = async (req, res) => {
       return res.status(200).send(JSON.stringify(params, null, 2));
     }
 
+    // ימות שולח בקשה נוספת בניתוק השיחה (hangup=yes) עם כל הנתונים שנאספו.
+    // מתעלמים ממנה כדי לא לבצע פעולה (כמו דיווח הוצאה) פעם שנייה.
+    if (String(params.hangup || '').toLowerCase() === 'yes') {
+      return res.status(200).send('ok');
+    }
+
     const action = params.action || 'menu';
 
     if (action === 'menu') {
@@ -95,7 +101,7 @@ module.exports = async (req, res) => {
       );
     }
 
-    const currency = profile.currency || '₪';
+    const currency = (profile.currency && profile.currency !== '₪') ? profile.currency : 'שקלים';
     const userId = profile.id;
 
     if (action === 'balance') return res.status(200).send(await getBalanceMessage(userId, currency));
