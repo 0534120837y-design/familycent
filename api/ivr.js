@@ -62,7 +62,7 @@ module.exports = async (req, res) => {
     const params = { ...(req.query || {}), ...(req.body && typeof req.body === 'object' ? req.body : {}) };
 
     // מצב דיבאג: .../api/ivr?debug=1 מחזיר את כל הפרמטרים שהתקבלו
-    if (params.debug === '1') {
+    if (String(params.debug || '').split(/[?&]/)[0] === '1') {
       return res.status(200).send(JSON.stringify(params, null, 2));
     }
 
@@ -72,7 +72,10 @@ module.exports = async (req, res) => {
       return res.status(200).send('ok');
     }
 
-    const action = params.action || 'menu';
+    // ימות עלול לצרף את הפרמטרים שלו לכתובת באופן שמלכלך את הערך (למשל "menu?ApiCallId=...").
+    // לכן לוקחים רק את החלק שלפני ? או & , ואם יש כמה ערכים - את הראשון.
+    const rawAction = Array.isArray(params.action) ? params.action[0] : params.action;
+    const action = String(rawAction || 'menu').split(/[?&]/)[0].trim().toLowerCase();
 
     if (action === 'menu') {
       return res.status(200).send(
@@ -108,6 +111,7 @@ module.exports = async (req, res) => {
     if (action === 'recent') return res.status(200).send(await getRecentMessage(userId));
     if (action === 'report') return res.status(200).send(await reportTransaction(userId, params));
 
+    console.log('פעולה לא מוכרת:', JSON.stringify(params));
     return res.status(200).send('פעולה לא מוכרת.');
   } catch (err) {
     console.error(err);
