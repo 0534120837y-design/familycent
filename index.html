@@ -3769,6 +3769,59 @@
     }
 
     /* שחזור נתוני משתמש מגיבוי (נוצר אוטומטית לפני איפוס, ולפני כל שחזור) */
+    // חלון בחירת גיבוי: רשימה ברורה של כל הגיבויים עם תאריך ושעה, ובחירה בלחיצה
+    function pickBackupDialog(userEmail, list) {
+      return new Promise((resolve) => {
+        const reasons = { reset: 'נשמר לפני איפוס', 'pre-restore': 'נשמר לפני שחזור קודם' };
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 z-[10000] flex items-center justify-center p-4';
+        overlay.style.cssText = 'background:rgba(15,23,42,.55);backdrop-filter:blur(4px);direction:rtl';
+        const box = document.createElement('div');
+        box.className = 'bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col';
+        box.style.maxHeight = 'calc(100dvh - 2rem)';
+        const fmt = (d) => { const x = new Date(d); return x.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' · ' + x.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }); };
+        const items = list.map((b, i) => `
+          <button type="button" data-i="${i}" class="bk-item w-full text-right p-3 rounded-xl border-2 border-slate-200 hover:border-indigo-300 transition flex items-start gap-3">
+            <span class="bk-radio mt-1 shrink-0 w-4 h-4 rounded-full border-2 border-slate-300"></span>
+            <span class="flex-1 min-w-0">
+              <span class="block text-sm font-bold text-slate-900">${escapeHtml(fmt(b.created_at))}</span>
+              <span class="block text-xs text-slate-500 mt-0.5">${escapeHtml(reasons[b.reason] || b.reason || '')}</span>
+              <span class="block text-xs text-slate-700 mt-1">${b.counts.transactions} תנועות · ${b.counts.budgets} תקציבים · ${b.counts.goals} יעדים · ${b.counts.credit_cards} כרטיסים</span>
+            </span>
+          </button>`).join('');
+        box.innerHTML = `
+          <div class="p-5 pb-3">
+            <div class="font-bold text-slate-900 text-base">♻️ בחירת גיבוי לשחזור</div>
+            <div class="text-xs text-slate-500 mt-1 break-words">גיבויים של ${escapeHtml(userEmail)} (${list.length}). לחצו על הגיבוי הרצוי.</div>
+          </div>
+          <div id="bkList" class="px-5 space-y-2 overflow-y-auto flex-1">${items}</div>
+          <div class="p-4 mt-3 bg-slate-50 border-t border-slate-100 flex gap-2 justify-end rounded-b-2xl">
+            <button type="button" id="bkCancel" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100">ביטול</button>
+            <button type="button" id="bkOk" disabled class="px-5 py-2 rounded-xl text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed">שחזר גיבוי זה</button>
+          </div>`;
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        let sel = null;
+        const ok = box.querySelector('#bkOk');
+        const done = (v) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(v); };
+        const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
+        document.addEventListener('keydown', onKey, true);
+        box.querySelectorAll('.bk-item').forEach((el) => el.addEventListener('click', () => {
+          sel = parseInt(el.dataset.i, 10);
+          box.querySelectorAll('.bk-item').forEach((o) => {
+            const on = o === el;
+            o.style.borderColor = on ? '#14b8a6' : '';
+            o.style.background = on ? '#f0fdfa' : '';
+            o.querySelector('.bk-radio').style.cssText = on ? 'background:#0d9488;border-color:#0d9488;box-shadow:inset 0 0 0 2px #fff' : '';
+          });
+          ok.disabled = false;
+        }));
+        ok.addEventListener('click', () => { if (sel !== null) done(sel); });
+        box.querySelector('#bkCancel').addEventListener('click', () => done(null));
+        overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) done(null); });
+      });
+    }
+
     async function adminRestoreUser(userId, userEmail, requestId) {
       try {
         const { data: { session } } = await sb.auth.getSession();
@@ -3778,13 +3831,9 @@
         if (!res.ok) { showToast(data.error || 'שגיאה בטעינת הגיבויים'); return; }
         const list = data.backups || [];
         if (list.length === 0) { showToast('אין גיבויים שמורים עבור המשתמש הזה.'); return; }
-        const reasons = { reset: 'לפני איפוס', 'pre-restore': 'לפני שחזור' };
-        const lines = list.map((b, i) => `${i + 1}) ${new Date(b.created_at).toLocaleString('he-IL')} - ${reasons[b.reason] || b.reason} - ${b.counts.transactions} תנועות, ${b.counts.budgets} תקציבים, ${b.counts.goals} יעדים`).join('\n');
-        const pick = await uiPrompt(`גיבויים של ${userEmail}:\n\n${lines}\n\nהקלידו את מספר הגיבוי לשחזור:`);
-        if (!pick) return;
-        const idx = parseInt(pick, 10) - 1;
-        if (!(idx >= 0 && idx < list.length)) { showToast('מספר לא תקין.'); return; }
-        if (!(await uiConfirm(`השחזור יחליף את כל הנתונים הנוכחיים של ${userEmail} בנתוני הגיבוי שבחרתם. לפני כן יישמר גיבוי של המצב הנוכחי.\n\nלשחזר?`))) return;
+        const idx = await pickBackupDialog(userEmail, list);
+        if (idx === null) return;
+        if (!(await uiConfirm(`השחזור יחליף את כל הנתונים הנוכחיים של ${userEmail} בנתוני הגיבוי מתאריך ${new Date(list[idx].created_at).toLocaleString('he-IL')}. לפני כן יישמר גיבוי של המצב הנוכחי.\n\nלשחזר?`))) return;
         const r2 = await fetch('/api/admin-data?mode=restoreUser', { method: 'POST', headers: hdr, body: JSON.stringify({ targetUserId: userId, backupId: list[idx].id, requestId: requestId || undefined }) });
         const d2 = await r2.json();
         if (!r2.ok) { showToast(d2.error || 'השחזור נכשל'); renderAdminUsersTable(); return; }
@@ -4097,7 +4146,7 @@
       overlay.id = 'dataRequestDialog';
       overlay.className = 'fixed inset-0 z-[10000] flex items-center justify-center p-4';
       overlay.style.cssText = 'background:rgba(15,23,42,.55);backdrop-filter:blur(4px);direction:rtl;animation:toastIn .18s ease-out';
-      overlay.innerHTML = '<div id="dataRequestCard" class="fc-modal-card bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"><div class="text-center text-slate-400 text-sm py-8">טוען...</div></div>';
+      overlay.innerHTML = '<div id="dataRequestCard" class="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden" style="max-height:calc(100vh - 2rem);max-height:calc(100dvh - 2rem)"><div class="text-center text-slate-400 text-sm py-8">טוען...</div></div>';
       document.body.appendChild(overlay);
       overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeDataRequestDialog(); });
       window.__drKeydown = (e) => { if (e.key === 'Escape') closeDataRequestDialog(); };
@@ -4129,6 +4178,7 @@
           </div>`;
         }).join('');
         card.innerHTML = `
+          <div class="p-5 sm:p-6 overflow-y-auto flex-1 min-h-0" style="overscroll-behavior:contain">
           ${header('🗑️', 'איפוס או שחזור נתונים', 'הפעולה מבוצעת על ידי מנהל המערכת, אחרי שתשלחו בקשה')}
           ${openRows}
           <div class="grid gap-2 mt-1">
@@ -4138,8 +4188,9 @@
               <div class="font-bold text-teal-800 text-sm">♻️ בקשה לשחזור</div><div class="text-[11px] text-teal-700">החזרת הנתונים מהגיבוי</div></button>
           </div>
           <div class="text-[11px] text-slate-500 mt-3">אפשר לבטל בקשה בכל רגע, כל עוד המנהל עדיין לא התחיל לטפל בה.</div>
-          <div class="fc-modal-footer bg-white border-t border-slate-200 flex justify-end">
-            <button type="button" onclick="closeDataRequestDialog()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">סגור</button>
+          </div>
+          <div class="shrink-0 px-5 sm:px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+            <button type="button" onclick="closeDataRequestDialog()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 transition">סגור</button>
           </div>`;
         return;
       }
@@ -4164,6 +4215,7 @@
       const boxCls = isReset ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-amber-50 border-amber-200 text-amber-900';
       const sendCls = isReset ? 'bg-rose-600 hover:bg-rose-700' : 'bg-teal-600 hover:bg-teal-700';
       card.innerHTML = `
+        <div class="p-5 sm:p-6 overflow-y-auto flex-1 min-h-0" style="overscroll-behavior:contain">
         ${header(isReset ? '⚠️' : '♻️', isReset ? 'בקשה לאיפוס נתונים' : 'בקשה לשחזור נתונים', 'קראו בעיון לפני השליחה')}
         <button type="button" onclick="renderDataRequestDialog('choose')" class="text-xs text-indigo-600 hover:underline mb-3">‹ חזרה לבחירה</button>
         <div class="border rounded-xl p-4 ${boxCls}">
@@ -4173,8 +4225,9 @@
         ${isReset ? `<label class="flex items-start gap-2 mt-4 text-sm text-slate-700"><input type="checkbox" id="drKeepReports" checked class="mt-1 w-4 h-4"><span>לשמור את הדוחות הסגורים בארכיון הדוחות</span></label>` : ''}
         <textarea id="drNote" rows="2" maxlength="300" placeholder="הערה למנהל (אופציונלי)" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"></textarea>
         <label class="flex items-start gap-2 mt-3 text-sm font-semibold text-slate-800"><input type="checkbox" id="drUnderstand" onchange="document.getElementById('drSendBtn').disabled = !this.checked" class="mt-1 w-4 h-4"><span>${isReset ? 'הבנתי שהאיפוס מוחק את כל הנתונים הפעילים שלי ומתחיל דף חדש' : 'הבנתי שהשחזור מחליף את הנתונים הנוכחיים שלי בנתוני הגיבוי'}</span></label>
-        <div class="fc-modal-footer bg-white border-t border-slate-200 flex gap-3 justify-end">
-          <button type="button" onclick="closeDataRequestDialog()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">ביטול</button>
+        </div>
+        <div class="shrink-0 px-5 sm:px-6 py-3 bg-slate-50 border-t border-slate-200 flex gap-3 justify-end">
+          <button type="button" onclick="closeDataRequestDialog()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 transition">ביטול</button>
           <button type="button" id="drSendBtn" disabled onclick="sendDataRequestFromDialog('${view}')" class="px-5 py-2 rounded-xl text-sm font-bold text-white ${sendCls} shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed">${isReset ? 'שלח בקשה לאיפוס' : 'שלח בקשה לשחזור'}</button>
         </div>`;
     }
