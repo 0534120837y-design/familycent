@@ -38,7 +38,7 @@ module.exports = async function handler(req, res) {
   }
 
   async function sendPlainEmail(to, subject, text, html) {
-    if (!RESEND_KEY) { console.error('RESEND_API_KEY חסר - לא ניתן לשלוח מייל'); return; }
+    if (!RESEND_KEY) { console.error('RESEND_API_KEY חסר - לא ניתן לשלוח מייל'); return false; }
     try {
       const payload = { from: process.env.RESEND_FROM || 'FamilyCent <onboarding@resend.dev>', to: [to], subject, text };
       if (html) payload.html = html;
@@ -47,9 +47,11 @@ module.exports = async function handler(req, res) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_KEY}` },
         body: JSON.stringify(payload)
       });
-      if (!r.ok) console.error('Resend החזיר שגיאה בשליחת מייל ל-' + to + ':', await r.text());
+      if (!r.ok) { console.error('Resend החזיר שגיאה בשליחת מייל ל-' + to + ':', await r.text()); return false; }
+      return true;
     } catch (err) {
       console.error('שליחת מייל נכשלה:', err);
+      return false;
     }
   }
 
@@ -293,6 +295,59 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // תופס בקשה פתוחה (pending -> processing) בצורה אטומית, כדי שביטול של המשתמש והטיפול של המנהל לא ידרכו זה על זה
+    async function claimRequest(requestId, type, userId) {
+      let url = `${SUPABASE_URL}/rest/v1/data_requests?id=eq.${requestId}&status=eq.pending&type=eq.${type}`;
+      if (userId) url += `&user_id=eq.${userId}`;
+      const r = await fetch(url, {
+        method: 'PATCH', headers: { ...sbHeaders, Prefer: 'return=representation' },
+        body: JSON.stringify({ status: 'processing' })
+      });
+      if (!r.ok) { console.error('claim failed', await r.text()); return { failed: true }; }
+      const rows = await r.json();
+      return { row: Array.isArray(rows) && rows[0] ? rows[0] : null };
+    }
+    async function releaseRequest(requestId) {
+      await fetch(`${SUPABASE_URL}/rest/v1/data_requests?id=eq.${requestId}&status=eq.processing`, {
+        method: 'PATCH', headers: { ...sbHeaders, Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: 'pending' })
+      });
+    }
+    const CLAIM_FAIL_MSG = 'לא ניתן לטפל בבקשה. ודאו שהרצתם מחדש את קובץ backups-table.sql ב-Supabase.';
+    const CLAIM_NONE_MSG = 'הבקשה בוטלה על ידי המשתמש או שכבר טופלה';
+
+    // מייל למי ששלח את הבקשה
+    async function emailRequester(userId, kind, extra) {
+      try {
+        const pr = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=email,family_name`, { headers: sbHeaders });
+        const rows = await pr.json();
+        const p = Array.isArray(rows) && rows[0];
+        if (!p || !p.email) return false;
+        const name = esc(p.family_name || '');
+        const hello = `<p style="font-size:15px; color:#0f172a;">שלום${name ? ' ' + name : ''},</p>`;
+        const btn = `<p style="margin-top:20px;"><a href="${esc(SITE_URL)}" style="background:#4f46e5; color:#ffffff; padding:10px 22px; border-radius:10px; text-decoration:none; font-weight:700; font-size:14px;">כניסה ל-FamilyCent</a></p>`;
+        let subject, title, body, text;
+        if (kind === 'reset_done') {
+          subject = 'האיפוס שביקשת בוצע - FamilyCent';
+          title = 'האיפוס בוצע בהצלחה';
+          body = `<p style="font-size:14px; color:#334155; line-height:1.7;">בקשת האיפוס שלך אושרה והנתונים אופסו. המשתמש שלך נשאר פעיל ואפשר להתחיל דף חדש.<br>נשמר גיבוי של הנתונים הקודמים, ואם תרצה לשחזר אותם אפשר להגיש בקשת שחזור מהאזור האישי.</p>${btn}`;
+          text = 'בקשת האיפוס שלך בוצעה. נשמר גיבוי, ואפשר להגיש בקשת שחזור מהאזור האישי.';
+        } else if (kind === 'restore_done') {
+          subject = 'השחזור בוצע - FamilyCent';
+          title = 'הנתונים שוחזרו';
+          body = `<p style="font-size:14px; color:#334155; line-height:1.7;">הנתונים שלך שוחזרו מהגיבוי. מצבך הקודם נשמר בגיבוי נפרד.</p>${btn}`;
+          text = 'הנתונים שלך שוחזרו מהגיבוי.';
+        } else {
+          subject = 'הבקשה שלך נדחתה - FamilyCent';
+          title = 'הבקשה לא אושרה';
+          const why = extra ? `<p style="font-size:14px; color:#334155;"><b>סיבה:</b> ${esc(extra)}</p>` : '';
+          body = `<p style="font-size:14px; color:#334155; line-height:1.7;">הבקשה שהגשת לא אושרה, והנתונים שלך לא שונו.</p>${why}${btn}`;
+          text = 'הבקשה שהגשת לא אושרה והנתונים לא שונו.' + (extra ? ' סיבה: ' + String(extra).slice(0, 300) : '');
+        }
+        return await sendPlainEmail(p.email, subject, text, wrapAdminEmailHtml(title, '', hello + body));
+      } catch (e) { console.error('emailRequester failed', e); return false; }
+    }
+
     if (mode === 'pending') {
       // קריאה קלה לחלון ההתראות של המנהל: משתמשים שממתינים לאישור + בקשות איפוס/שחזור פתוחות
       const [uRes, rRes] = await Promise.all([
@@ -331,10 +386,17 @@ module.exports = async function handler(req, res) {
 
     if (mode === 'rejectRequest') {
       if (req.method !== 'POST') return res.status(405).json({ error: 'יש להשתמש ב-POST' });
-      const { requestId } = req.body || {};
+      const { requestId, reason } = req.body || {};
       if (!requestId || !UUID_RE.test(String(requestId))) return res.status(400).json({ error: 'requestId לא תקין' });
-      await markRequest(requestId, 'rejected');
-      return res.status(200).json({ success: true });
+      const rj = await fetch(`${SUPABASE_URL}/rest/v1/data_requests?id=eq.${requestId}&status=eq.pending`, {
+        method: 'PATCH', headers: { ...sbHeaders, Prefer: 'return=representation' },
+        body: JSON.stringify({ status: 'rejected', handled_at: new Date().toISOString() })
+      });
+      const rjRows = rj.ok ? await rj.json() : null;
+      if (!rj.ok) return res.status(500).json({ error: CLAIM_FAIL_MSG });
+      if (!Array.isArray(rjRows) || !rjRows[0]) return res.status(404).json({ error: CLAIM_NONE_MSG });
+      const emailSent = await emailRequester(rjRows[0].user_id, 'rejected', reason);
+      return res.status(200).json({ success: true, emailSent });
     }
 
     if (mode === 'approveReset') {
@@ -342,12 +404,12 @@ module.exports = async function handler(req, res) {
       if (req.method !== 'POST') return res.status(405).json({ error: 'יש להשתמש ב-POST' });
       const { requestId } = req.body || {};
       if (!requestId || !UUID_RE.test(String(requestId))) return res.status(400).json({ error: 'requestId לא תקין' });
-      const rr = await fetch(`${SUPABASE_URL}/rest/v1/data_requests?id=eq.${requestId}&status=eq.pending&type=eq.reset&select=user_id,keep_reports`, { headers: sbHeaders });
-      const rrRows = await rr.json();
-      const reqRow = Array.isArray(rrRows) && rrRows[0];
-      if (!reqRow) return res.status(404).json({ error: 'בקשת האיפוס לא נמצאה או שכבר טופלה' });
+      const claim = await claimRequest(requestId, 'reset');
+      if (claim.failed) return res.status(500).json({ error: CLAIM_FAIL_MSG });
+      if (!claim.row) return res.status(404).json({ error: CLAIM_NONE_MSG });
+      const reqRow = claim.row;
       const uid = reqRow.user_id;
-      if (!UUID_RE.test(String(uid))) return res.status(400).json({ error: 'משתמש לא תקין' });
+      if (!UUID_RE.test(String(uid))) { await releaseRequest(requestId); return res.status(400).json({ error: 'משתמש לא תקין' }); }
 
       const snap = {};
       for (const tb of BACKUP_TABLES) snap[tb] = await getAllRows(`${tb}?user_id=eq.${uid}&select=*`);
@@ -355,16 +417,17 @@ module.exports = async function handler(req, res) {
         method: 'POST', headers: { ...sbHeaders, Prefer: 'return=minimal' },
         body: JSON.stringify({ user_id: uid, reason: 'reset', data: snap })
       });
-      if (!sv.ok) return res.status(500).json({ error: 'לא ניתן ליצור גיבוי, ולכן האיפוס בוטל.' });
+      if (!sv.ok) { await releaseRequest(requestId); return res.status(500).json({ error: 'לא ניתן ליצור גיבוי, ולכן האיפוס בוטל.' }); }
 
       const toDelete = ['transactions', 'recurring', 'budgets', 'goals', 'categories', 'credit_cards'];
       if (reqRow.keep_reports === false) toDelete.push('reports');
       for (const tb of toDelete) {
         const d = await fetch(`${SUPABASE_URL}/rest/v1/${tb}?user_id=eq.${uid}`, { method: 'DELETE', headers: sbHeaders });
-        if (!d.ok) { console.error('reset delete failed', tb, await d.text()); return res.status(500).json({ error: 'האיפוס נכשל באמצע. הגיבוי נשמר ואפשר לשחזר ממנו.' }); }
+        if (!d.ok) { console.error('reset delete failed', tb, await d.text()); await releaseRequest(requestId); return res.status(500).json({ error: 'האיפוס נכשל באמצע. הגיבוי נשמר ואפשר לשחזר ממנו.' }); }
       }
       await markRequest(requestId, 'done');
-      return res.status(200).json({ success: true });
+      const emailSent = await emailRequester(uid, 'reset_done');
+      return res.status(200).json({ success: true, emailSent });
     }
 
     if (mode === 'restoreUser') {
@@ -373,10 +436,18 @@ module.exports = async function handler(req, res) {
       if (!targetUserId || !UUID_RE.test(String(targetUserId))) return res.status(400).json({ error: 'targetUserId לא תקין' });
       if (!backupId || !UUID_RE.test(String(backupId))) return res.status(400).json({ error: 'backupId לא תקין' });
 
+      const hasReq = !!(requestId && UUID_RE.test(String(requestId)));
+      if (hasReq) {
+        const claim = await claimRequest(requestId, 'restore', targetUserId);
+        if (claim.failed) return res.status(500).json({ error: CLAIM_FAIL_MSG });
+        if (!claim.row) return res.status(404).json({ error: CLAIM_NONE_MSG });
+      }
+      const fail = async (status, msg) => { if (hasReq) await releaseRequest(requestId); return res.status(status).json({ error: msg }); };
+
       // הגיבוי חייב להיות שייך לאותו משתמש בדיוק
       const bRes = await fetch(`${SUPABASE_URL}/rest/v1/backups?id=eq.${backupId}&user_id=eq.${targetUserId}&select=data`, { headers: sbHeaders });
       const bRows = await bRes.json();
-      if (!Array.isArray(bRows) || !bRows[0] || !bRows[0].data) return res.status(404).json({ error: 'הגיבוי לא נמצא' });
+      if (!Array.isArray(bRows) || !bRows[0] || !bRows[0].data) return fail(404, 'הגיבוי לא נמצא');
       const data = bRows[0].data;
 
       // 1. גיבוי של המצב הנוכחי, כדי שאפשר יהיה לחזור אחורה
@@ -386,12 +457,12 @@ module.exports = async function handler(req, res) {
         method: 'POST', headers: { ...sbHeaders, Prefer: 'return=minimal' },
         body: JSON.stringify({ user_id: targetUserId, reason: 'pre-restore', data: current })
       });
-      if (!saveRes.ok) return res.status(500).json({ error: 'לא ניתן לשמור גיבוי של המצב הנוכחי, ולכן השחזור בוטל.' });
+      if (!saveRes.ok) return fail(500, 'לא ניתן לשמור גיבוי של המצב הנוכחי, ולכן השחזור בוטל.');
 
       // 2. מחיקת הנתונים הנוכחיים
       for (const tb of ['transactions', 'recurring', 'reports', 'budgets', 'goals', 'categories', 'credit_cards']) {
         const d = await fetch(`${SUPABASE_URL}/rest/v1/${tb}?user_id=eq.${targetUserId}`, { method: 'DELETE', headers: sbHeaders });
-        if (!d.ok) { console.error('restore delete failed', tb, await d.text()); return res.status(500).json({ error: 'השחזור נכשל באמצע המחיקה. המצב הקודם נשמר בגיבוי.' }); }
+        if (!d.ok) { console.error('restore delete failed', tb, await d.text()); return fail(500, 'השחזור נכשל באמצע המחיקה. המצב הקודם נשמר בגיבוי.'); }
       }
 
       // 3. הכנסת נתוני הגיבוי (מזהים חדשים; כרטיסי האשראי ממופים מחדש)
@@ -410,21 +481,16 @@ module.exports = async function handler(req, res) {
             method: 'POST', headers: { ...sbHeaders, Prefer: tb === 'credit_cards' ? 'return=representation' : 'return=minimal' },
             body: JSON.stringify(rows)
           });
-          if (!ins.ok) { console.error('restore insert failed', tb, await ins.text()); return res.status(500).json({ error: 'השחזור נכשל בטבלה ' + tb + '. המצב הקודם נשמר בגיבוי ואפשר לשחזר ממנו.' }); }
+          if (!ins.ok) { console.error('restore insert failed', tb, await ins.text()); return fail(500, 'השחזור נכשל בטבלה ' + tb + '. המצב הקודם נשמר בגיבוי ואפשר לשחזר ממנו.'); }
           if (tb === 'credit_cards') {
             const created = await ins.json();
             chunk.forEach((old, k) => { if (old.id && created[k]) cardIdMap[old.id] = created[k].id; });
           }
         }
       }
-      if (requestId && UUID_RE.test(String(requestId))) {
-        // מסמן כמטופלת רק בקשת שחזור פתוחה של אותו משתמש
-        await fetch(`${SUPABASE_URL}/rest/v1/data_requests?id=eq.${requestId}&user_id=eq.${targetUserId}&type=eq.restore&status=eq.pending`, {
-          method: 'PATCH', headers: { ...sbHeaders, Prefer: 'return=minimal' },
-          body: JSON.stringify({ status: 'done', handled_at: new Date().toISOString() })
-        });
-      }
-      return res.status(200).json({ success: true });
+      if (hasReq) await markRequest(requestId, 'done');
+      const emailSent = await emailRequester(targetUserId, 'restore_done');
+      return res.status(200).json({ success: true, emailSent });
     }
 
     return res.status(400).json({ error: 'mode לא מוכר' });
