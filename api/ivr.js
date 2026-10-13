@@ -78,8 +78,29 @@ module.exports = async (req, res) => {
     const action = String(rawAction || 'menu').split(/[?&]/)[0].trim().toLowerCase();
 
     if (action === 'menu') {
+      // ברכה אישית: אם אפשר לזהות את המתקשר לפי הטלפון - פונים אליו בשם.
+      // כל כשל בזיהוי לא מפיל את התפריט, אלא רק מחזיר ברכה כללית.
+      let name = '';
+      try {
+        const phone = normalizePhone(extractCallerPhone(params));
+        if (phone && SERVICE_KEY) {
+          const rows = await sb('profiles?select=family_name,phone&phone=not.is.null');
+          const p = (rows || []).find(r => normalizePhone(r.phone) === phone);
+          if (p && p.family_name) {
+            // מנרמלים לצורה "משפחת <שם>": אם כבר כתוב "משפחת"/"משפחה" - משאירים, אחרת מוסיפים
+            const clean = String(p.family_name)
+              .replace(/[.&=]/g, ' ')
+              .replace(/^\s*משפח(ת|ה)\s+/, '')
+              .trim();
+            name = clean ? 'משפחת ' + clean : '';
+          }
+        }
+      } catch (e) {
+        console.error('ברכה אישית נכשלה:', e.message);
+      }
+      const hello = name ? `שלום ${name}` : 'שלום';
       return res.status(200).send(
-        'שלום, ברוכים הבאים למרכז המשפחה. ' +
+        hello + ', ברוכים הבאים למרכז המשפחה. ' +
         'להאזנה ליתרה החודשית הקישו 1. ' +
         'לדיווח הוצאה או הכנסה חדשה הקישו 2. ' +
         'לשמיעת התנועות האחרונות הקישו 3.'
