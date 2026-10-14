@@ -171,20 +171,23 @@
         container = document.createElement('div');
         container.id = 'toastContainer';
         container.style.direction = 'rtl';
-        container.className = 'fixed top-6 left-1/2 -translate-x-1/2 sm:left-auto sm:right-6 sm:translate-x-0 z-[9999] flex flex-col gap-2 items-center sm:items-end w-[calc(100%-2rem)] sm:w-auto';
+        container.className = 'fixed top-6 left-1/2 -translate-x-1/2 sm:left-auto sm:right-6 sm:translate-x-0 flex flex-col gap-3 items-center sm:items-end w-[calc(100%-2rem)] sm:w-auto';
+        container.style.zIndex = '2147483000'; /* מעל כל החלונות והטשטוש */
+        container.style.pointerEvents = 'none';
         document.body.appendChild(container);
       }
       const toast = document.createElement('div');
-      toast.className = `max-w-sm w-full sm:w-auto px-4 py-3 rounded-xl shadow-2xl text-sm font-semibold text-white text-center sm:text-right flex items-center gap-2 ${isError ? 'bg-rose-600 border-2 border-rose-300' : 'bg-slate-900'}`;
+      toast.className = `max-w-md w-full sm:w-auto px-5 py-4 rounded-2xl text-base font-bold text-white text-center sm:text-right flex items-center gap-3 leading-snug ${isError ? 'bg-rose-600 border-2 border-white' : 'bg-emerald-600 border-2 border-white'}`;
+      toast.style.boxShadow = '0 10px 40px rgba(0,0,0,.45), 0 0 0 3px rgba(15,23,42,.25)';
       toast.style.animation = 'toastIn 0.25s ease-out';
-      toast.innerHTML = `<span style="font-size:16px;">${isError ? '⚠️' : '✅'}</span><span>${message.replace(/</g, '&lt;')}</span>`;
+      toast.innerHTML = `<span style="font-size:22px;">${isError ? '⚠️' : '✅'}</span><span>${message.replace(/</g, '&lt;')}</span>`;
       container.appendChild(toast);
       setTimeout(() => {
         toast.style.transition = 'opacity 0.3s, transform 0.3s';
         toast.style.opacity = '0';
         toast.style.transform = 'translateY(-10px)';
         setTimeout(() => toast.remove(), 300);
-      }, isError ? 5000 : 3200);
+      }, isError ? 7000 : 4500);
     }
     /* --- סוף הודעות Toast --- */
 
@@ -638,6 +641,7 @@
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4 mb-4">
               <h3 class="text-lg font-bold text-slate-900">תנועות ועו"ש משפחתי</h3>
               <div class="flex items-center gap-2">
+                <button onclick="exportYearlyForAccountant()" class="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-bold transition" title="קובץ אקסל שנתי מרוכז לרואה חשבון">📒 דוח שנתי לרו"ח</button>
                 <button onclick="exportToCSV()" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition">📥 אקסל CSV</button>
                 <button onclick="generatePrintReport()" class="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition">🖨️ הדפסת רשימה</button>
                 <button onclick="emailFilteredTransactions()" class="px-2.5 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-xl text-xs font-bold transition">📧 שלח תנועות במייל</button>
@@ -647,7 +651,7 @@
 
             <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/60 mb-6 space-y-3">
               <div class="relative">
-                <input id="filterSearchText" type="text" oninput="updateUI()" placeholder="🔍 חיפוש חופשי לפי תיאור או הערה..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-indigo-500">
+                <input id="filterSearchText" type="text" oninput="updateUI()" placeholder="🔍 חיפוש חופשי לפי תיאור, הערה, קטגוריה או סכום..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-indigo-500">
               </div>
               <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 items-end">
                 <div>
@@ -893,6 +897,7 @@
 
       <!-- לשונית ג: פאנל מנהל מערכת -->
       <div id="tabContentAdmin" class="tab-content">
+        <div class="flex justify-end mb-3"><button type="button" onclick="showAdminLog()" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-sm">📜 יומן פעולות מנהל</button></div>
         <div id="adminRequestsSection" class="bg-amber-50 p-5 rounded-2xl border border-amber-200 shadow-md mb-6 hidden">
           <h3 class="font-bold text-amber-900 mb-3">📨 בקשות איפוס ושחזור ממתינות</h3>
           <div id="adminRequestsList" class="space-y-2"></div>
@@ -1101,6 +1106,11 @@
         <button type="button" id="scanReceiptBtn" onclick="triggerReceiptUpload()" class="w-full bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-xl py-2.5 text-sm font-bold transition">📷 מלא אוטומטית מצילום/PDF של חשבונית</button>
         <input type="file" id="receiptFileInput" accept="image/*,application/pdf" onchange="handleReceiptUpload(this)" class="hidden">
       </div>
+      <div class="flex items-center gap-2">
+        <select id="templateSelect" onchange="applyTemplate(this.value)" class="flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-xl bg-white text-sm"><option value="">⭐ מילוי מתבנית שמורה...</option></select>
+        <button type="button" onclick="saveCurrentAsTemplate()" class="shrink-0 px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200" title="שמור את הפרטים שמילאתם כתבנית">⭐ שמור כתבנית</button>
+        <button type="button" onclick="deleteSelectedTemplate()" class="shrink-0 px-2.5 py-2 rounded-xl text-xs bg-white hover:bg-rose-50 text-rose-500 border border-slate-200" title="מחק את התבנית הנבחרת">🗑️</button>
+      </div>
       <div>
         <label class="block text-sm font-semibold text-slate-700 mb-1">סוג הפעולה</label>
         <select id="actionTypeInput" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl bg-white">
@@ -1130,6 +1140,14 @@
       <div>
         <label class="block text-sm font-semibold text-slate-700 mb-1">הערות (אופציונלי)</label>
         <textarea id="notesInput" rows="2" placeholder="למשל: קניתי במבצע, לבדוק אם הוחזר כסף..." class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm"></textarea>
+      </div>
+      <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+        <div class="flex items-center gap-2 flex-wrap">
+          <button type="button" onclick="document.getElementById('txReceiptInput').click()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300">📎 צרף תמונת קבלה</button>
+          <span id="txReceiptStatus" class="text-xs text-slate-500">לא צורפה קבלה</span>
+          <button type="button" id="txReceiptClear" onclick="clearPendingReceipt()" class="hidden text-xs text-rose-600 hover:underline">הסר</button>
+        </div>
+        <input type="file" id="txReceiptInput" accept="image/*" onchange="handleTxReceiptFile(this)" class="hidden">
       </div>
       <div>
         <label class="block text-sm font-semibold text-slate-700 mb-1">קטגוריה</label>
@@ -1791,6 +1809,236 @@
       return h;
     }
 
+
+    /* ===== תבניות לפעולות שחוזרות ===== */
+    let userTemplates = [];
+    async function loadUserTemplates() {
+      const { data, error } = await sb.from('tx_templates').select('*').eq('user_id', currentUserId).order('created_at', { ascending: true });
+      if (error) { console.error(error); userTemplates = []; return; }
+      userTemplates = data || [];
+    }
+    function renderTemplateOptions() {
+      const sel = document.getElementById('templateSelect');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">⭐ מילוי מתבנית שמורה...</option>' +
+        userTemplates.map(tp => `<option value="${escapeHtml(tp.id)}">${escapeHtml(tp.name)}</option>`).join('');
+    }
+    function applyTemplate(id) {
+      if (!id) return;
+      const tp = userTemplates.find(x => x.id === id);
+      if (!tp) return;
+      document.getElementById('actionTypeInput').value = tp.action_type;
+      if (tp.amount != null) document.getElementById('amountInput').value = tp.amount;
+      document.getElementById('descriptionInput').value = tp.description || '';
+      if (tp.category && customCategories.includes(tp.category)) document.getElementById('categoryInput').value = tp.category;
+      const cardEl = document.getElementById('cardAssignInput');
+      if (cardEl) cardEl.value = tp.card_id || '';
+    }
+    async function saveCurrentAsTemplate() {
+      const description = document.getElementById('descriptionInput').value.trim();
+      if (!description) { showToast('מלאו לפחות תיאור לפני שמירת תבנית.'); return; }
+      const name = await uiPrompt('שם לתבנית (למשל: סופר שבועי):', description, { icon: '⭐' });
+      if (name === null) return;
+      const clean = String(name).trim().slice(0, 60);
+      if (!clean) return;
+      const amountRaw = document.getElementById('amountInput').value;
+      const cardEl = document.getElementById('cardAssignInput');
+      const { data, error } = await sb.from('tx_templates').insert({
+        user_id: currentUserId, name: clean,
+        action_type: document.getElementById('actionTypeInput').value,
+        amount: amountRaw ? parseFloat(amountRaw) : null,
+        description, category: document.getElementById('categoryInput').value,
+        card_id: cardEl && cardEl.value ? cardEl.value : null
+      }).select().single();
+      if (error) { console.error(error); showToast('שמירת התבנית נכשלה. ודאו שהרצתם את features.sql ב-Supabase.'); return; }
+      userTemplates.push(data);
+      renderTemplateOptions();
+      document.getElementById('templateSelect').value = data.id;
+      showToast('התבנית נשמרה ⭐');
+    }
+    async function deleteSelectedTemplate() {
+      const sel = document.getElementById('templateSelect');
+      if (!sel || !sel.value) { showToast('בחרו קודם תבנית למחיקה.'); return; }
+      const tp = userTemplates.find(x => x.id === sel.value);
+      if (!tp || !(await uiConfirm(`למחוק את התבנית "${tp.name}"?`))) return;
+      const { error } = await sb.from('tx_templates').delete().eq('id', tp.id);
+      if (error) { console.error(error); showToast('מחיקת התבנית נכשלה.'); return; }
+      userTemplates = userTemplates.filter(x => x.id !== tp.id);
+      renderTemplateOptions();
+    }
+
+    /* ===== תמונת קבלה לכל פעולה ===== */
+    let receiptTxIds = new Set();
+    let pendingReceiptData = null;
+    async function loadReceiptIds() {
+      const { data, error } = await sb.from('receipts').select('transaction_id').eq('user_id', currentUserId);
+      if (error) { console.error(error); receiptTxIds = new Set(); return; }
+      receiptTxIds = new Set((data || []).map(r => String(r.transaction_id)));
+    }
+    function clearPendingReceipt() {
+      pendingReceiptData = null;
+      const st = document.getElementById('txReceiptStatus'); if (st) st.innerText = 'לא צורפה קבלה';
+      const clr = document.getElementById('txReceiptClear'); if (clr) clr.classList.add('hidden');
+      const inp = document.getElementById('txReceiptInput'); if (inp) inp.value = '';
+    }
+    function handleTxReceiptFile(input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      if (!/^image\//.test(file.type)) { showToast('אפשר לצרף רק תמונה.'); input.value = ''; return; }
+      const reader = new FileReader();
+      reader.onload = () => setPendingReceiptFromDataUrl(reader.result);
+      reader.onerror = () => showToast('לא הצלחנו לקרוא את התמונה.');
+      reader.readAsDataURL(file);
+    }
+    // מכווץ תמונה (data URL) ושומר אותה כקבלה שתישמר יחד עם הפעולה
+    function setPendingReceiptFromDataUrl(srcDataUrl, silent) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const max = 1200;
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          let q = 0.7, out = c.toDataURL('image/jpeg', q);
+          while (out.length > 350000 && q > 0.3) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
+          if (out.length > 600000) { if (!silent) showToast('התמונה גדולה מדי גם אחרי כיווץ. נסו תמונה אחרת.'); resolve(false); return; }
+          pendingReceiptData = out;
+          document.getElementById('txReceiptStatus').innerText = '✅ התמונה תישמר עם הפעולה (' + Math.round(out.length / 1024) + 'KB)';
+          document.getElementById('txReceiptClear').classList.remove('hidden');
+          resolve(true);
+        };
+        img.onerror = () => { if (!silent) showToast('לא הצלחנו לקרוא את התמונה.'); resolve(false); };
+        img.src = srcDataUrl;
+      });
+    }
+    async function viewReceipt(txId) {
+      const { data, error } = await sb.from('receipts').select('data').eq('user_id', currentUserId).eq('transaction_id', String(txId)).maybeSingle();
+      if (error || !data) { console.error(error); showToast('לא הצלחנו לטעון את הקבלה.'); return; }
+      const ov = document.createElement('div');
+      ov.className = 'fixed inset-0 z-[10000] flex items-center justify-center p-4';
+      ov.style.cssText = 'background:rgba(15,23,42,.7);backdrop-filter:blur(4px);direction:rtl';
+      ov.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden" style="max-height:calc(100dvh - 2rem)">
+        <div class="flex items-center justify-between p-4 border-b border-slate-100"><div class="font-bold text-slate-900">📎 תמונת קבלה</div><button type="button" class="rc-close text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button></div>
+        <div class="p-3 overflow-auto flex-1 min-h-0 bg-slate-50"><img src="${data.data}" alt="קבלה" class="w-full h-auto rounded-lg"></div>
+        <div class="p-3 border-t border-slate-100 flex justify-between gap-2"><button type="button" class="rc-del px-3 py-2 rounded-xl text-xs font-bold text-rose-700 bg-white border border-rose-300 hover:bg-rose-50">🗑️ הסר קבלה</button><button type="button" class="rc-close px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200">סגור</button></div></div>`;
+      document.body.appendChild(ov);
+      ov.querySelectorAll('.rc-close').forEach(b => b.addEventListener('click', () => ov.remove()));
+      ov.addEventListener('mousedown', (e) => { if (e.target === ov) ov.remove(); });
+      ov.querySelector('.rc-del').addEventListener('click', async () => {
+        if (!(await uiConfirm('להסיר את תמונת הקבלה מהפעולה הזו?'))) return;
+        const { error: dErr } = await sb.from('receipts').delete().eq('user_id', currentUserId).eq('transaction_id', String(txId));
+        if (dErr) { console.error(dErr); showToast('ההסרה נכשלה.'); return; }
+        receiptTxIds.delete(String(txId)); ov.remove(); updateUI();
+      });
+    }
+
+    /* ===== התראת חריגה מתקציב (באתר ובמייל) ===== */
+    function computeBudgetCrossing(category, addAmount) {
+      const limit = parseFloat(getUserBudgets()[category]) || 0;
+      if (limit <= 0 || addAmount <= 0) return null;
+      const now = new Date();
+      let before = 0;
+      localTransactions.forEach(t => {
+        if (!t.timestamp || t.category !== category || !(t.actionType && t.actionType.includes('הוצאה'))) return;
+        const d = new Date(t.timestamp);
+        if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) before += parseFloat(t.amount) || 0;
+      });
+      const after = before + addAmount;
+      if (before < limit && after >= limit) return { category, level: 100, spent: after, limit };
+      if (before < limit * 0.8 && after >= limit * 0.8) return { category, level: 80, spent: after, limit };
+      if (before >= limit && after > before) return { category, level: 101, spent: after, limit };
+      return null;
+    }
+    function notifyBudgetCrossing(a) {
+      const cur = currentUserCurrency;
+      const pct = Math.round((a.spent / a.limit) * 100);
+      let title, msg;
+      if (a.level === 80) { title = 'התקרבתם לתקרת התקציב'; msg = `ההוצאות ב-${a.category} הגיעו ל-${pct}% מהתקציב החודשי (${cur}${Math.round(a.spent).toLocaleString()} מתוך ${cur}${Math.round(a.limit).toLocaleString()}).`; }
+      else if (a.level === 100) { title = 'חרגתם מהתקציב'; msg = `ההוצאות ב-${a.category} עברו את התקציב החודשי: ${cur}${Math.round(a.spent).toLocaleString()} מתוך ${cur}${Math.round(a.limit).toLocaleString()} (${pct}%).`; }
+      else { showToast(`⚠️ ${a.category}: אתם כבר מעל התקציב החודשי (${pct}%).`); return; }
+      showToast((a.level === 100 ? '🚨 ' : '⚠️ ') + msg);
+      try {
+        (async () => {
+          const html = `<div dir="rtl" style="font-family:Arial,sans-serif;font-size:15px;line-height:1.8;color:#0f172a"><h3 style="margin:0 0 8px">${a.level === 100 ? '🚨' : '⚠️'} ${title}</h3><p>${escapeHtml(msg)}</p><p style="color:#64748b;font-size:13px">הודעה אוטומטית מ-FamilyCent. התראות נשלחות כשמגיעים ל-80% ול-100% מהתקציב של קטגוריה.</p></div>`;
+          const r = await fetch('/api/send-email', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ subject: `FamilyCent - ${title}: ${a.category}`, text: msg, html }) });
+          if (!r.ok) console.error('budget alert email failed', await r.text());
+        })();
+      } catch (e) { console.error(e); }
+    }
+
+    /* ===== דוח שנתי מרוכז לרואה חשבון (אקסל) ===== */
+    async function exportYearlyForAccountant() {
+      if (typeof XLSX === 'undefined') { showToast('ספריית האקסל לא נטענה. רעננו את הדף ונסו שוב.'); return; }
+      const defYear = String(new Date().getFullYear());
+      const ans = await uiPrompt('לאיזו שנה להפיק את הדוח השנתי?', defYear, { icon: '📒' });
+      if (ans === null) return;
+      const year = parseInt(ans, 10);
+      if (!year || year < 2000 || year > 2100) { showToast('שנה לא תקינה.'); return; }
+      const rows = localTransactions.filter(t => t.timestamp && new Date(t.timestamp).getFullYear() === year)
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      if (rows.length === 0) { showToast(`אין תנועות בשנת ${year}.`); return; }
+      const isExp = (t) => t.actionType && t.actionType.includes('הוצאה');
+      const num = (t) => parseFloat(t.amount) || 0;
+      const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+      const monthly = monthNames.map((m, i) => {
+        let inc = 0, exp = 0;
+        rows.forEach(t => { if (new Date(t.timestamp).getMonth() === i) { if (isExp(t)) exp += num(t); else inc += num(t); } });
+        return { 'חודש': m, 'הכנסות': inc, 'הוצאות': exp, 'נטו': inc - exp };
+      });
+      const totalInc = monthly.reduce((s, r) => s + r['הכנסות'], 0), totalExp = monthly.reduce((s, r) => s + r['הוצאות'], 0);
+      monthly.push({ 'חודש': 'סה"כ שנתי', 'הכנסות': totalInc, 'הוצאות': totalExp, 'נטו': totalInc - totalExp });
+      const catMap = {};
+      rows.forEach(t => { const c = t.category || 'כללי'; catMap[c] = catMap[c] || { inc: 0, exp: 0 }; if (isExp(t)) catMap[c].exp += num(t); else catMap[c].inc += num(t); });
+      const cats = Object.keys(catMap).sort((a, b) => catMap[b].exp - catMap[a].exp).map(c => ({ 'קטגוריה': c, 'הכנסות': catMap[c].inc, 'הוצאות': catMap[c].exp, 'נטו': catMap[c].inc - catMap[c].exp }));
+      const cardName = (id) => { const c = userCreditCardRows.find(x => String(x.id) === String(id)); return c ? (c.name || c.card_name || '') : ''; };
+      const detail = rows.map(t => ({
+        'תאריך': new Date(t.timestamp).toLocaleDateString('he-IL'),
+        'סוג': isExp(t) ? 'הוצאה' : 'הכנסה',
+        'תיאור': t.description || '',
+        'קטגוריה': t.category || 'כללי',
+        'סכום': num(t),
+        'כרטיס': t.cardId ? cardName(t.cardId) : '',
+        'הערות': t.notes || '',
+        'קבלה מצורפת': receiptTxIds.has(String(t.id)) ? 'כן' : ''
+      }));
+      const wb = XLSX.utils.book_new();
+      const add = (name, data) => { const ws = XLSX.utils.json_to_sheet(data); ws['!cols'] = Object.keys(data[0]).map(k => ({ wch: Math.max(12, k.length + 4) })); XLSX.utils.book_append_sheet(wb, ws, name); };
+      add('סיכום חודשי', monthly);
+      add('לפי קטגוריה', cats);
+      add('כל התנועות', detail);
+      wb.Workbook = { Views: [{ RTL: true }] };
+      XLSX.writeFile(wb, `FamilyCent_דוח_שנתי_${year}.xlsx`);
+      showToast('הדוח השנתי הורד כקובץ אקסל 📒');
+    }
+
+    /* ===== יומן פעולות מנהל ===== */
+    async function showAdminLog() {
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        const res = await fetch('/api/admin-data?mode=log', { headers: { Authorization: `Bearer ${session.access_token}` } });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error || 'טעינת היומן נכשלה'); return; }
+        const list = data.log || [];
+        const ov = document.createElement('div');
+        ov.className = 'fixed inset-0 z-[10000] flex items-center justify-center p-4';
+        ov.style.cssText = 'background:rgba(15,23,42,.55);backdrop-filter:blur(4px);direction:rtl';
+        const rowsHtml = list.length === 0 ? '<div class="text-center text-slate-400 text-sm py-8">עדיין אין פעולות ביומן.</div>' : list.map(l => `
+          <div class="border border-slate-200 rounded-xl p-3 mb-2">
+            <div class="flex justify-between gap-2 text-sm"><b class="text-slate-900">${escapeHtml(l.action)}</b><span class="text-xs text-slate-400 shrink-0">${escapeHtml(new Date(l.created_at).toLocaleString('he-IL'))}</span></div>
+            <div class="text-xs text-slate-600 mt-1 break-words">על ידי: ${escapeHtml(l.admin_email)}${l.target_email ? ' · משתמש: ' + escapeHtml(l.target_email) : ''}</div>
+            ${l.details ? `<div class="text-xs text-slate-500 mt-0.5 break-words">${escapeHtml(l.details)}</div>` : ''}
+          </div>`).join('');
+        ov.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden" style="max-height:calc(100dvh - 2rem)">
+          <div class="flex items-center justify-between p-4 border-b border-slate-100"><div class="font-bold text-slate-900">📜 יומן פעולות מנהל <span class="text-xs font-normal text-slate-400">(150 אחרונות)</span></div><button type="button" class="lg-close text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button></div>
+          <div class="p-4 overflow-y-auto flex-1 min-h-0">${rowsHtml}</div>
+          <div class="p-3 border-t border-slate-100 bg-slate-50 flex justify-end"><button type="button" class="lg-close px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100">סגור</button></div></div>`;
+        document.body.appendChild(ov);
+        ov.querySelectorAll('.lg-close').forEach(b => b.addEventListener('click', () => ov.remove()));
+        ov.addEventListener('mousedown', (e) => { if (e.target === ov) ov.remove(); });
+      } catch (err) { console.error(err); showToast('שגיאת רשת בטעינת היומן.'); }
+    }
+
     async function sendEmail(subject, message, html) {
       try {
         const body = { to: currentUserEmail, subject };
@@ -1889,7 +2137,7 @@
 
       const rows = Object.keys(rep.breakdown).map(cat => `
         <tr>
-          <td style="padding:9px 12px; border-bottom:1px solid #f1f5f9; font-size:13px; color:#334155;">${cat}</td>
+          <td style="padding:9px 12px; border-bottom:1px solid #f1f5f9; font-size:13px; color:#334155;">${escapeHtml(cat)}</td>
           <td style="padding:9px 12px; border-bottom:1px solid #f1f5f9; font-size:13px; text-align:left; font-weight:700; color:#334155;">${currentUserCurrency}${rep.breakdown[cat].toLocaleString()}</td>
         </tr>`).join('');
 
@@ -1907,8 +2155,8 @@
         const isExp = t.actionType && t.actionType.includes('הוצאה');
         return `<tr>
           <td style="padding:8px 10px; border-bottom:1px solid #f1f5f9; font-size:12px; color:#64748b; white-space:nowrap;">${new Date(t.timestamp).toLocaleDateString('he-IL')}</td>
-          <td style="padding:8px 10px; border-bottom:1px solid #f1f5f9; font-size:12px; color:#334155;">${t.category || 'כללי'}</td>
-          <td style="padding:8px 10px; border-bottom:1px solid #f1f5f9; font-size:12px; color:#334155;">${t.description}</td>
+          <td style="padding:8px 10px; border-bottom:1px solid #f1f5f9; font-size:12px; color:#334155;">${escapeHtml(t.category || 'כללי')}</td>
+          <td style="padding:8px 10px; border-bottom:1px solid #f1f5f9; font-size:12px; color:#334155;">${escapeHtml(t.description)}</td>
           <td style="padding:8px 10px; border-bottom:1px solid #f1f5f9; font-size:12px; text-align:left;">${emailAmountSpan(parseFloat(t.amount) || 0, isExp)}</td>
         </tr>`;
       }).join('');
@@ -2401,6 +2649,8 @@
           });
         }
 
+        // שומרים את הקבלה שנסרקה גם כקבלה מצורפת לפעולה (תישמר כשלוחצים "שמור")
+        const savedOk = await setPendingReceiptFromDataUrl('data:image/jpeg;base64,' + base64, true);
         const response = await fetch('/api/ai-assist', {
           method: 'POST',
           headers: await authHeaders(),
@@ -2412,7 +2662,7 @@
         if (!data.amount && !data.description) {
           showToast('לא הצלחנו לזהות פרטים בקובץ. נסו קובץ ברור יותר או מלאו ידנית.');
         } else {
-          showToast('הפרטים מולאו אוטומטית מהחשבונית - בדקו ואשרו לפני השמירה.');
+          showToast('הפרטים מולאו אוטומטית מהחשבונית' + (savedOk ? ', והקבלה תישמר עם הפעולה' : '') + ' - בדקו ואשרו לפני השמירה.');
         }
       } catch (err) {
         console.error(err);
@@ -2650,6 +2900,33 @@
         const projected = dailyAvg * daysInMonth;
         lines.push(`🔮 בקצב ההוצאות הנוכחי, צפויות החודש הוצאות של כ-${currentUserCurrency}${Math.round(projected).toLocaleString()} עד סוף החודש (${daysInMonth - daysPassed} ימים נותרו).`);
       }
+
+      /* תחזית לפי הפעולות הקבועות: מה נשאר לצאת/להיכנס החודש, וכמה צפוי בחודש הבא */
+      (function () {
+        const recs = getUserRecurring();
+        if (recs.length === 0) return;
+        let monthInc = 0, monthExp = 0;
+        localTransactions.forEach(t => {
+          if (!t.timestamp) return;
+          const d = new Date(t.timestamp);
+          if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return;
+          const a = parseFloat(t.amount) || 0;
+          if (t.actionType && t.actionType.includes('הוצאה')) monthExp += a; else monthInc += a;
+        });
+        let leftInc = 0, leftExp = 0, nextInc = 0, nextExp = 0;
+        recs.forEach(r => {
+          const a = parseFloat(r.amount) || 0;
+          const isExp = r.actionType && r.actionType.includes('הוצאה');
+          if (isExp) nextExp += a; else nextInc += a;
+          const generated = r.lastGenMonth === now.getMonth() && r.lastGenYear === now.getFullYear();
+          if (!generated) { if (isExp) leftExp += a; else leftInc += a; }
+        });
+        if (leftInc > 0 || leftExp > 0) {
+          const endBal = (monthInc + leftInc) - (monthExp + leftExp);
+          lines.push(`🧮 לפי הפעולות הקבועות שעוד לא נרשמו החודש (הוצאות ${currentUserCurrency}${Math.round(leftExp).toLocaleString()}, הכנסות ${currentUserCurrency}${Math.round(leftInc).toLocaleString()}), יתרת החודש צפויה להיות כ-${currentUserCurrency}${Math.round(endBal).toLocaleString()} (לפני הוצאות רגילות נוספות).`);
+        }
+        lines.push(`🗓️ בחודש הבא כבר צפויות הוצאות קבועות של ${currentUserCurrency}${Math.round(nextExp).toLocaleString()} והכנסות קבועות של ${currentUserCurrency}${Math.round(nextInc).toLocaleString()}.`);
+      })();
 
       /* התראות תקציב: נשאר עד התקרה, וחריגה צפויה בקצב הנוכחי */
       const budgetsForInsights = getUserBudgets();
@@ -3335,6 +3612,8 @@
       document.getElementById('recurringOptionWrapper').classList.remove('hidden');
       const cardSelectEl = document.getElementById('cardAssignInput');
       if (cardSelectEl) cardSelectEl.value = '';
+      clearPendingReceipt();
+      renderTemplateOptions();
       document.getElementById('expenseModal').classList.remove('hidden'); 
     }
     
@@ -3358,7 +3637,9 @@
         loadUserGoals(),
         loadUserRecurring(),
         loadUserReports(),
-        loadUserCreditCards()
+        loadUserCreditCards(),
+        loadUserTemplates(),
+        loadReceiptIds()
       ]);
       renderCategoryOptions();
       updateFilterCategoryDropdown();
@@ -3507,7 +3788,9 @@
         if (searchVal) {
           const inDescription = t.description && t.description.toLowerCase().includes(searchVal);
           const inNotes = t.notes && t.notes.toLowerCase().includes(searchVal);
-          if (!inDescription && !inNotes) return false;
+          const inCategory = t.category && t.category.toLowerCase().includes(searchVal);
+          const inAmount = String(t.amount == null ? '' : t.amount).includes(searchVal.replace(/,/g, ''));
+          if (!inDescription && !inNotes && !inCategory && !inAmount) return false;
         }
 
         return true;
@@ -3574,6 +3857,7 @@
             </div>
             <div class="flex items-center gap-3 shrink-0">
               <span class="font-bold ${colorClass}">${sign} <span class="currencySymbol">${currentUserCurrency}</span> ${amountNum.toLocaleString()}</span>
+              ${receiptTxIds.has(String(t.id)) ? `<button onclick="viewReceipt('${t.id}')" class="text-slate-400 hover:text-violet-600 transition text-sm" title="הצג תמונת קבלה">📎</button>` : ''}
               <button onclick="editTransaction('${t.id}')" class="text-slate-400 hover:text-indigo-600 transition text-sm" title="ערוך פעולה">✏️</button>
               <button onclick="deleteTransaction('${t.id}')" class="text-slate-300 hover:text-rose-500 transition text-sm" title="מחק פעולה">🗑️</button>
             </div>
@@ -3989,6 +4273,8 @@
 
       if (!amount || !description) { showToast('בבקשה מלאו סכום ותיאור לפעולה'); return; }
 
+      let savedTxId = editingTransactionId;
+      let budgetAlert = null;
       if (editingTransactionId) {
         const { error } = await sb.from('transactions')
           .update({ action_type: actionType, amount, description, category, notes, card_id: cardId })
@@ -3996,10 +4282,12 @@
         if (error) { console.error(error); showToast('שגיאה בעדכון הפעולה. נסו שוב.'); return; }
         showToast('הפעולה עודכנה בהצלחה');
       } else {
-        const { error } = await sb.from('transactions').insert({
+        if (actionType.includes('הוצאה')) budgetAlert = computeBudgetCrossing(category, parseFloat(amount) || 0);
+        const { data: insRow, error } = await sb.from('transactions').insert({
           user_id: currentUserId, action_type: actionType, amount, description, category, notes, card_id: cardId
-        });
+        }).select('id').single();
         if (error) { console.error(error); showToast('שגיאה בשמירת הפעולה. נסו שוב.'); return; }
+        if (insRow) savedTxId = insRow.id;
 
         const isRecurringEl = document.getElementById('isRecurringInput');
         if (isRecurringEl && isRecurringEl.checked) {
@@ -4014,9 +4302,16 @@
         }
       }
 
+      if (pendingReceiptData && savedTxId) {
+        const { error: rcErr } = await sb.from('receipts').upsert({ user_id: currentUserId, transaction_id: String(savedTxId), data: pendingReceiptData }, { onConflict: 'user_id,transaction_id' });
+        if (rcErr) { console.error(rcErr); showToast('הפעולה נשמרה, אבל שמירת תמונת הקבלה נכשלה. ודאו שהרצתם את features.sql ב-Supabase.'); }
+        else receiptTxIds.add(String(savedTxId));
+      }
+      clearPendingReceipt();
       await loadTransactionsLocal();
       renderCreditCards();
       closeModal();
+      if (budgetAlert) notifyBudgetCrossing(budgetAlert);
       
       document.getElementById('amountInput').value = '';
       document.getElementById('descriptionInput').value = '';
@@ -4042,7 +4337,9 @@
       }
       document.getElementById('recurringOptionWrapper').classList.add('hidden');
       document.getElementById('isRecurringInput').checked = false;
-      
+      clearPendingReceipt();
+      if (receiptTxIds.has(String(id))) document.getElementById('txReceiptStatus').innerText = '✅ כבר מצורפת קבלה (בחירת תמונה חדשה תחליף אותה)';
+      renderTemplateOptions();
       document.getElementById('expenseModal').classList.remove('hidden');
     }
 
@@ -4051,6 +4348,10 @@
       const { error } = await sb.from('transactions').delete().eq('id', id);
       if (error) { console.error(error); showToast('שגיאה במחיקת הפעולה. נסו שוב.'); return; }
       localTransactions = localTransactions.filter(t => t.id !== id);
+      if (receiptTxIds.has(String(id))) {
+        receiptTxIds.delete(String(id));
+        sb.from('receipts').delete().eq('user_id', currentUserId).eq('transaction_id', String(id)).then(() => {});
+      }
       updateUI();
     }
 
@@ -4060,7 +4361,7 @@
       window.__seenAdminItems = new Set();
       const pendingPopup = document.getElementById('adminPendingPopup'); if (pendingPopup) pendingPopup.remove();
       currentUserEmail = ''; currentUserId = null; localTransactions = []; currentUserRawData = {}; generatedReports = [];
-      userBudgetRows = []; userGoalRows = []; userRecurringRows = []; userCategoryRows = [];
+      userBudgetRows = []; userGoalRows = []; userRecurringRows = []; userCategoryRows = []; userTemplates = []; receiptTxIds = new Set();
       document.getElementById('loginEmail').value = ''; 
       document.getElementById('loginPassword').value = '';
       document.getElementById('dashboardPage').classList.remove('active');
