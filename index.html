@@ -3424,10 +3424,18 @@
       try {
         const { data: { session } } = await sb.auth.getSession();
         if (!session) { isCurrentUserAdmin = false; return; }
-        const res = await fetch('/api/admin-data?mode=overview', {
-          headers: { Authorization: `Bearer ${session.access_token}` }
-        });
-        isCurrentUserAdmin = res.ok;
+        // בדיקה קלה (whoami) במקום טעינת כל המשתמשים. כשל זמני בשרת (5xx/רשת) לא מוריד את המנהל למשתמש רגיל: מנסים שוב.
+        let res = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            res = await fetch('/api/admin-data?mode=whoami', { headers: { Authorization: `Bearer ${session.access_token}` } });
+            if (res.status < 500) break;
+          } catch (e) { res = null; }
+          await new Promise(r => setTimeout(r, 700 * (attempt + 1)));
+        }
+        if (res && res.ok) isCurrentUserAdmin = true;
+        else if (res && (res.status === 401 || res.status === 403)) isCurrentUserAdmin = false;
+        else isCurrentUserAdmin = !!(currentUserRawData && currentUserRawData.is_admin === true); // השרת לא ענה: נשענים על הדגל בפרופיל (השרת עדיין אוכף הרשאות)
         document.getElementById('btnTabAdmin').classList.toggle('hidden', !isCurrentUserAdmin);
       } catch (err) {
         console.error(err);
