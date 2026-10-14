@@ -26,6 +26,22 @@ async function getUserFromToken(req) {
   }
 }
 
+// טוקן ההתחברות של המשתמש (לשאילתות שמכבדות את מדיניות ה-RLS שלו)
+function getToken(req) {
+  const auth = req.headers.authorization || '';
+  return auth.startsWith('Bearer ') ? auth.slice(7) : null;
+}
+async function userRest(req, path) {
+  try {
+    const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${path}`, {
+      headers: { apikey: process.env.SUPABASE_ANON_KEY, Authorization: `Bearer ${getToken(req)}` }
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -44,6 +60,11 @@ module.exports = async function handler(req, res) {
     if (!adminEmail) return res.status(500).json({ error: 'ADMIN_EMAIL לא מוגדר' });
     const label = adminRequest === 'reset' ? 'איפוס נתונים' : adminRequest === 'restore' ? 'שחזור נתונים' : null;
     if (!label) return res.status(400).json({ error: 'סוג בקשה לא תקין' });
+    // מונע שימוש לרעה כשרשור הודעות למנהל: חייבת להיות בקשה פתוחה אמיתית של המשתמש שנוצרה ב-10 הדקות האחרונות
+    if (!UUID_RE.test(String(user.id))) return res.status(400).json({ error: 'משתמש לא תקין' });
+    const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const open = await userRest(req, `data_requests?user_id=eq.${user.id}&type=eq.${adminRequest}&status=eq.pending&created_at=gte.${encodeURIComponent(since)}&select=id&limit=1`);
+    if (!Array.isArray(open) || open.length === 0) return res.status(403).json({ error: 'לא נמצאה בקשה פתוחה' });
     payload = {
       from, to: [adminEmail],
       subject: `FamilyCent - בקשה ל${label}`,
@@ -51,6 +72,9 @@ module.exports = async function handler(req, res) {
     };
   } else if (user && user.email && !notifyAdmin) {
     // משתמש מחובר: המייל נשלח תמיד לכתובת שלו בלבד, בלי קשר לשדה "to" שהלקוח שלח
+    // משתמש שעדיין לא אושר על ידי המנהל לא יכול לשלוח מיילים
+    const prof = await userRest(req, `profiles?id=eq.${user.id}&select=is_approved`);
+    if (Array.isArray(prof) && prof[0] && prof[0].is_approved === false) return res.status(403).json({ error: 'החשבון ממתין לאישור מנהל' });
     if (!subject || (!text && !html)) return res.status(400).json({ error: 'חסרים פרטים (subject / text או html)' });
     if (html && String(html).length > MAX_HTML) return res.status(413).json({ error: 'התוכן גדול מדי' });
     payload = { from, to: [user.email], subject: String(subject).slice(0, 200) };
