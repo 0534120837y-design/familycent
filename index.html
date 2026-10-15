@@ -542,7 +542,7 @@
           
           <button onclick="openProfileModal()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">⚙️ אזור אישי והגדרות</button>
           <button onclick="openBackupModal()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">💾 גיבוי ושחזור</button>
-          <button onclick="openImportExcelModal()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">📊 ייבוא מאקסל</button>
+          <button onclick="openImportExcelModal()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">📁 ייבוא מקובץ (Excel / PDF / תמונה)</button>
           <button id="darkModeToggleBtn" onclick="toggleDarkMode()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-slate-800 font-medium transition flex items-center gap-2 text-slate-400 hover:text-white">🌙 מצב כהה</button>
           <button onclick="logout()" class="w-full text-right px-4 py-3 rounded-xl hover:bg-rose-950/40 text-rose-400 font-medium transition flex items-center gap-2">🔓 התנתק מהמערכת</button>
         </nav>
@@ -652,6 +652,7 @@
             <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/60 mb-6 space-y-3">
               <div class="relative">
                 <input id="filterSearchText" type="text" oninput="updateUI()" placeholder="🔍 חיפוש חופשי לפי תיאור, הערה, קטגוריה או סכום..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-indigo-500">
+              <select id="filterTemplateSelect" onchange="filterByTemplate(this.value)" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-indigo-500 mt-2"><option value="">⭐ חיפוש לפי תבנית שמורה...</option></select>
               </div>
               <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 items-end">
                 <div>
@@ -1068,15 +1069,16 @@
   <div id="importExcelModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="fc-modal-card bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-5">
       <div class="border-b border-slate-200 pb-3 flex justify-between items-center">
-        <h3 class="font-bold text-xl text-slate-900">📊 ייבוא תנועות מאקסל</h3>
+        <h3 class="font-bold text-xl text-slate-900">📁 ייבוא תנועות מקובץ</h3>
         <button onclick="closeImportExcelModal()" class="text-slate-400 hover:text-slate-600 text-xl">✕</button>
       </div>
-      <p class="text-sm text-slate-500">העלו קובץ Excel/CSV של חשבון האשראי או הבנק שלכם (למשל ייצוא מ-Cal, ישראכרט, מקס). המערכת תזהה אוטומטית עמודות של תאריך, תיאור וסכום.</p>
+      <p class="text-sm text-slate-500">העלו קובץ של חשבון הבנק או כרטיס האשראי: Excel / CSV, או PDF / תמונה (דף חשבון או חשבונית). אפשר לבחור כמה קבצים יחד. המערכת תזהה אוטומטית תאריך, תיאור וסכום, ותציג רשימה לבדיקה לפני הייבוא.</p>
       <label class="w-full block">
-        <span class="w-full block text-center py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl transition cursor-pointer">📁 בחירת קובץ</span>
-        <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" onchange="handleExcelFileSelect(this)" class="hidden">
+        <span class="w-full block text-center py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl transition cursor-pointer">📁 בחירת קבצים (Excel, CSV, PDF, תמונה)</span>
+        <input type="file" id="excelFileInput" multiple accept=".xlsx,.xls,.csv,.tsv,.txt,.pdf,image/*" onchange="handleExcelFileSelect(this)" class="hidden">
       </label>
       <p id="importPreviewText" class="text-sm font-semibold text-slate-700 text-center"></p>
+      <div id="importPreviewList" class="space-y-1 max-h-56 overflow-y-auto"></div>
       <button id="confirmImportBtn" onclick="confirmExcelImport()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition hidden">✅ אישור ייבוא</button>
       <div class="flex justify-end pt-2 border-t border-slate-100">
         <button onclick="closeImportExcelModal()" class="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">סגור</button>
@@ -1103,8 +1105,8 @@
         <button type="button" onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-xl leading-none" aria-label="סגור">✕</button>
       </div>
       <div>
-        <button type="button" id="scanReceiptBtn" onclick="triggerReceiptUpload()" class="w-full bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-xl py-2.5 text-sm font-bold transition">📷 מלא אוטומטית מצילום/PDF של חשבונית</button>
-        <input type="file" id="receiptFileInput" accept="image/*,application/pdf" onchange="handleReceiptUpload(this)" class="hidden">
+        <button type="button" id="scanReceiptBtn" onclick="triggerReceiptUpload()" class="w-full bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-xl py-2.5 text-sm font-bold transition">📁 העלאת קובץ: מלא אוטומטית (חשבונית PDF/תמונה, או אקסל/CSV לייבוא)</button>
+        <input type="file" id="receiptFileInput" accept="image/*,application/pdf,.pdf,.xlsx,.xls,.csv,.tsv,.txt" onchange="handleReceiptUpload(this)" class="hidden">
       </div>
       <div class="flex items-center gap-2">
         <select id="templateSelect" onchange="applyTemplate(this.value)" class="flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-xl bg-white text-sm"><option value="">⭐ מילוי מתבנית שמורה...</option></select>
@@ -1816,8 +1818,27 @@
       const { data, error } = await sb.from('tx_templates').select('*').eq('user_id', currentUserId).order('created_at', { ascending: true });
       if (error) { console.error(error); userTemplates = []; return; }
       userTemplates = data || [];
+      renderTemplateOptions();
+    }
+    // חיפוש בתנועות לפי תבנית: מציב את תיאור התבנית בתיבת החיפוש (ואת הקטגוריה שלה בסינון)
+    function filterByTemplate(id) {
+      const searchEl = document.getElementById('filterSearchText');
+      const catEl = document.getElementById('filterCategory');
+      if (!id) { if (searchEl) searchEl.value = ''; if (catEl) catEl.value = 'all'; updateUI(); return; }
+      const tp = userTemplates.find(x => x.id === id);
+      if (!tp) return;
+      if (searchEl) searchEl.value = tp.description || tp.name || '';
+      if (catEl) catEl.value = 'all';
+      updateUI();
     }
     function renderTemplateOptions() {
+      const fsel = document.getElementById('filterTemplateSelect');
+      if (fsel) {
+        const cur = fsel.value;
+        fsel.innerHTML = '<option value="">⭐ חיפוש לפי תבנית שמורה...</option>' +
+          userTemplates.map(tp => `<option value="${escapeHtml(tp.id)}">${escapeHtml(tp.name)}</option>`).join('');
+        fsel.value = userTemplates.some(x => x.id === cur) ? cur : '';
+      }
       const sel = document.getElementById('templateSelect');
       if (!sel) return;
       sel.innerHTML = '<option value="">⭐ מילוי מתבנית שמורה...</option>' +
@@ -1920,9 +1941,25 @@
       ov.style.cssText = 'background:rgba(15,23,42,.7);backdrop-filter:blur(4px);direction:rtl';
       ov.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden" style="max-height:calc(100dvh - 2rem)">
         <div class="flex items-center justify-between p-4 border-b border-slate-100"><div class="font-bold text-slate-900">📎 תמונת קבלה</div><button type="button" class="rc-close text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button></div>
-        <div class="p-3 overflow-auto flex-1 min-h-0 bg-slate-50"><img src="${data.data}" alt="קבלה" class="w-full h-auto rounded-lg"></div>
+        <div id="rcBox" class="p-3 overflow-auto flex-1 min-h-0 bg-slate-50 text-center text-sm text-slate-500">⏳ טוען את הקבלה...</div>
         <div class="p-3 border-t border-slate-100 flex justify-between gap-2"><button type="button" class="rc-del px-3 py-2 rounded-xl text-xs font-bold text-rose-700 bg-white border border-rose-300 hover:bg-rose-50">🗑️ הסר קבלה</button><button type="button" class="rc-close px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200">סגור</button></div></div>`;
       document.body.appendChild(ov);
+      // מציירים את הקבלה על קנבס (במקום תגית תמונה), כדי שסינוני תמונות בדפדפן/נטפרי לא יסתירו אותה
+      (function () {
+        const box = ov.querySelector('#rcBox');
+        const im = new Image();
+        im.onload = () => {
+          const c = document.createElement('canvas');
+          c.width = im.naturalWidth; c.height = im.naturalHeight;
+          c.style.cssText = 'width:100%;height:auto;border-radius:8px;background:#fff';
+          c.getContext('2d').drawImage(im, 0, 0);
+          box.innerHTML = ''; box.appendChild(c);
+        };
+        im.onerror = () => {
+          box.innerHTML = '<div class="py-6">לא ניתן להציג את התמונה בדפדפן הזה (ייתכן שהיא חסומה בסינון).<br>הפרטים של הפעולה (סכום, תיאור, תאריך) שמורים כרגיל.</div>';
+        };
+        im.src = data.data;
+      })();
       ov.querySelectorAll('.rc-close').forEach(b => b.addEventListener('click', () => ov.remove()));
       ov.addEventListener('mousedown', (e) => { if (e.target === ov) ov.remove(); });
       ov.querySelector('.rc-del').addEventListener('click', async () => {
@@ -2631,6 +2668,15 @@
     async function handleReceiptUpload(inputEl) {
       const file = inputEl.files[0];
       if (!file) return;
+      if (classifyUploadFile(file) === 'sheet') {
+        // קובץ אקסל/CSV: עוברים לייבוא מרובה תנועות
+        inputEl.value = '';
+        closeModal();
+        openImportExcelModal();
+        processImportFiles([file]);
+        return;
+      }
+      if (!classifyUploadFile(file)) { inputEl.value = ''; showToast('סוג הקובץ לא נתמך. אפשר להעלות PDF, תמונה, Excel או CSV.'); return; }
       const btn = document.getElementById('scanReceiptBtn');
       const original = btn.innerText;
       btn.innerText = '⏳ סורק חשבונית...';
@@ -2683,6 +2729,7 @@
       document.getElementById('importExcelModal').classList.add('hidden');
       document.getElementById('excelFileInput').value = '';
       document.getElementById('importPreviewText').innerText = '';
+      const pl = document.getElementById('importPreviewList'); if (pl) pl.innerHTML = '';
       document.getElementById('confirmImportBtn').classList.add('hidden');
       pendingImportRows = [];
     }
@@ -2740,32 +2787,118 @@
       }).filter(Boolean);
     }
 
-    function handleExcelFileSelect(inputEl) {
-      const file = inputEl.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
+    /* --- העלאת קבצים חכמה: Excel / CSV / TSV / TXT נקראים בדפדפן; PDF ותמונות נקראים ע"י ה-AI --- */
+    function classifyUploadFile(file) {
+      const name = (file.name || '').toLowerCase();
+      const type = file.type || '';
+      if (/\.(xlsx|xls|csv|tsv|txt)$/.test(name) || /spreadsheet|excel|csv|text\/plain|tab-separated/.test(type)) return 'sheet';
+      if (type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+      if (/^image\//.test(type) || /\.(jpe?g|png|webp|gif|bmp)$/.test(name)) return 'image';
+      return null;
+    }
+    function fileToBase64Raw(file) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1]);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+    }
+    function imageFileToJpegBase64(file, maxSide) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          resolve(c.toDataURL('image/jpeg', 0.8).split(',')[1]);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('לא הצלחנו לקרוא את התמונה')); };
+        img.src = url;
+      });
+    }
+    async function extractImportRowsFromFile(file) {
+      const kind = classifyUploadFile(file);
+      if (kind === 'sheet') {
+        const name = (file.name || '').toLowerCase();
+        const isText = /\.(csv|tsv|txt)$/.test(name);
+        const workbook = isText
+          ? XLSX.read(await file.text(), { type: 'string', cellDates: true })
+          : XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellDates: true });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        return parseImportRows(XLSX.utils.sheet_to_json(sheet, { defval: '' }));
+      }
+      if (kind !== 'pdf' && kind !== 'image') throw new Error('סוג הקובץ לא נתמך: ' + file.name);
+      if (kind === 'pdf' && file.size > 3 * 1024 * 1024) throw new Error('קובץ ה-PDF גדול מדי (עד 3MB). נסו לפצל אותו או לשלוח כתמונה.');
+      const base64 = kind === 'pdf' ? await fileToBase64Raw(file) : await imageFileToJpegBase64(file, 1800);
+      const response = await fetch('/api/ai-assist', {
+        method: 'POST', headers: await authHeaders(),
+        body: JSON.stringify({ mode: 'parse_document', imageBase64: base64, mimeType: kind === 'pdf' ? 'application/pdf' : 'image/jpeg' })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'הקריאה האוטומטית נכשלה');
+      const defaultCategory = customCategories.find(c => c.includes('כללי')) || customCategories[0] || 'כללי';
+      return (data.transactions || []).map(x => ({
+        user_id: currentUserId,
+        action_type: x.type === 'income' ? 'הכנסה 📈' : 'הוצאה 📉',
+        amount: x.amount,
+        description: x.description || 'תנועה מקובץ',
+        category: defaultCategory,
+        occurred_at: x.date ? new Date(x.date + 'T12:00:00').toISOString() : new Date().toISOString()
+      }));
+    }
+    async function processImportFiles(files) {
+      const preview = document.getElementById('importPreviewText');
+      const confirmBtn = document.getElementById('confirmImportBtn');
+      confirmBtn.classList.add('hidden');
+      let problems = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        preview.innerText = `⏳ קורא קובץ ${i + 1} מתוך ${files.length}: ${f.name}`;
         try {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-          const sheet = workbook.Sheets[workbook.SheetNames[0]];
-          const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-          pendingImportRows = parseImportRows(rows);
-          const preview = document.getElementById('importPreviewText');
-          const confirmBtn = document.getElementById('confirmImportBtn');
-          if (pendingImportRows.length === 0) {
-            preview.innerText = 'לא זוהו תנועות תקינות בקובץ. ודאו שיש בו עמודת סכום.';
-            confirmBtn.classList.add('hidden');
-          } else {
-            preview.innerText = `נמצאו ${pendingImportRows.length} תנועות לייבוא.`;
-            confirmBtn.classList.remove('hidden');
-          }
+          const rows = await extractImportRowsFromFile(f);
+          if (rows.length === 0) problems.push(`לא זוהו תנועות ב-${f.name}`);
+          pendingImportRows.push(...rows);
         } catch (err) {
           console.error(err);
-          showToast('שגיאה בקריאת הקובץ. ודאו שזהו קובץ Excel/CSV תקין.');
+          problems.push(`${f.name}: ${translateAuthError(err && err.message ? err.message : String(err))}`);
         }
-      };
-      reader.readAsArrayBuffer(file);
+      }
+      renderImportPreview(problems);
+    }
+    function renderImportPreview(problems) {
+      const preview = document.getElementById('importPreviewText');
+      const list = document.getElementById('importPreviewList');
+      const confirmBtn = document.getElementById('confirmImportBtn');
+      const probText = (problems && problems.length) ? '\n⚠️ ' + problems.join('\n⚠️ ') : '';
+      if (pendingImportRows.length === 0) {
+        preview.innerText = 'לא זוהו תנועות תקינות.' + probText;
+        list.innerHTML = '';
+        confirmBtn.classList.add('hidden');
+        return;
+      }
+      preview.innerText = `נמצאו ${pendingImportRows.length} תנועות לייבוא. אפשר להסיר שורות שלא נכונות.` + probText;
+      list.innerHTML = pendingImportRows.slice(0, 300).map((r, i) => `
+        <div class="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
+          <span class="text-slate-500 shrink-0">${escapeHtml(new Date(r.occurred_at).toLocaleDateString('he-IL'))}</span>
+          <span class="flex-1 min-w-0 truncate font-semibold text-slate-800">${escapeHtml(r.description)}</span>
+          <span class="shrink-0 font-bold ${r.action_type.includes('הוצאה') ? 'text-rose-600' : 'text-emerald-600'}">${r.action_type.includes('הוצאה') ? '-' : '+'}${escapeHtml(String(r.amount))}</span>
+          <button type="button" onclick="removeImportRow(${i})" class="shrink-0 text-slate-400 hover:text-rose-600" title="הסר שורה">✕</button>
+        </div>`).join('') + (pendingImportRows.length > 300 ? `<div class="text-xs text-slate-400 text-center">מוצגות 300 הראשונות (כולן ייובאו)</div>` : '');
+      confirmBtn.classList.remove('hidden');
+    }
+    function removeImportRow(i) {
+      pendingImportRows.splice(i, 1);
+      renderImportPreview();
+    }
+    async function handleExcelFileSelect(inputEl) {
+      const files = Array.from(inputEl.files || []);
+      inputEl.value = '';
+      if (files.length === 0) return;
+      await processImportFiles(files);
     }
 
     async function confirmExcelImport() {
@@ -3806,6 +3939,7 @@
     }
 
     function clearFilters() {
+      const fts = document.getElementById('filterTemplateSelect'); if (fts) fts.value = '';
       document.getElementById('filterFromDate').value = '';
       document.getElementById('filterToDate').value = '';
       document.getElementById('filterCategory').value = 'all';
