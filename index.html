@@ -1145,11 +1145,11 @@
       </div>
       <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
         <div class="flex items-center gap-2 flex-wrap">
-          <button type="button" onclick="document.getElementById('txReceiptInput').click()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300">📎 צרף תמונת קבלה</button>
+          <button type="button" onclick="document.getElementById('txReceiptInput').click()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300">📎 צרף קבלה (תמונה או PDF)</button>
           <span id="txReceiptStatus" class="text-xs text-slate-500">לא צורפה קבלה</span>
           <button type="button" id="txReceiptClear" onclick="clearPendingReceipt()" class="hidden text-xs text-rose-600 hover:underline">הסר</button>
         </div>
-        <input type="file" id="txReceiptInput" accept="image/*" onchange="handleTxReceiptFile(this)" class="hidden">
+        <input type="file" id="txReceiptInput" accept="image/*,application/pdf" onchange="handleTxReceiptFile(this)" class="hidden">
       </div>
       <div>
         <label class="block text-sm font-semibold text-slate-700 mb-1">קטגוריה</label>
@@ -1902,36 +1902,64 @@
       const clr = document.getElementById('txReceiptClear'); if (clr) clr.classList.add('hidden');
       const inp = document.getElementById('txReceiptInput'); if (inp) inp.value = '';
     }
+    // המרת קובץ/תמונה ל-bitmap בלי לעבור דרך תגית <img> (כדי שסינון תמונות של נטפרי לא יחליף אותה)
+    async function fileToBitmap(blob) {
+      if (window.createImageBitmap) { try { return await createImageBitmap(blob); } catch (e) { /* נופלים לגיבוי */ } }
+      return await new Promise((resolve, reject) => {
+        const u = URL.createObjectURL(blob); const im = new Image();
+        im.onload = () => { URL.revokeObjectURL(u); resolve(im); };
+        im.onerror = () => { URL.revokeObjectURL(u); reject(new Error('לא הצלחנו לקרוא את התמונה')); };
+        im.src = u;
+      });
+    }
+    function dataUrlToBlob(d) {
+      const parts = String(d).split(',');
+      const mime = ((parts[0] || '').match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+      const bin = atob(parts[1] || '');
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return new Blob([arr], { type: mime });
+    }
     function handleTxReceiptFile(input) {
       const file = input.files && input.files[0];
       if (!file) return;
-      if (!/^image\//.test(file.type)) { showToast('אפשר לצרף רק תמונה.'); input.value = ''; return; }
-      const reader = new FileReader();
-      reader.onload = () => setPendingReceiptFromDataUrl(reader.result);
-      reader.onerror = () => showToast('לא הצלחנו לקרוא את התמונה.');
-      reader.readAsDataURL(file);
+      if (file.type === 'application/pdf') { setPendingReceiptPdf(file); return; }
+      if (!/^image\//.test(file.type)) { showToast('אפשר לצרף רק תמונה או PDF.'); input.value = ''; return; }
+      setPendingReceiptFromBlob(file);
     }
-    // מכווץ תמונה (data URL) ושומר אותה כקבלה שתישמר יחד עם הפעולה
-    function setPendingReceiptFromDataUrl(srcDataUrl, silent) {
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          const max = 1200;
-          const scale = Math.min(1, max / Math.max(img.width, img.height));
-          const c = document.createElement('canvas');
-          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
-          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-          let q = 0.7, out = c.toDataURL('image/jpeg', q);
-          while (out.length > 350000 && q > 0.3) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
-          if (out.length > 600000) { if (!silent) showToast('התמונה גדולה מדי גם אחרי כיווץ. נסו תמונה אחרת.'); resolve(false); return; }
-          pendingReceiptData = out;
-          document.getElementById('txReceiptStatus').innerText = '✅ התמונה תישמר עם הפעולה (' + Math.round(out.length / 1024) + 'KB)';
-          document.getElementById('txReceiptClear').classList.remove('hidden');
-          resolve(true);
-        };
-        img.onerror = () => { if (!silent) showToast('לא הצלחנו לקרוא את התמונה.'); resolve(false); };
-        img.src = srcDataUrl;
-      });
+    // קבלה בקובץ PDF: נשמרת כמו שהיא (בלי המרה), עד כ-1MB
+    function setPendingReceiptPdf(file) {
+      if (file.size > 1000000) { showToast('קובץ ה-PDF גדול מדי (עד 1MB).'); document.getElementById('txReceiptInput').value = ''; return; }
+      const fr = new FileReader();
+      fr.onload = () => {
+        pendingReceiptData = String(fr.result);
+        document.getElementById('txReceiptStatus').innerText = '✅ קובץ ה-PDF יישמר עם הפעולה (' + Math.round(file.size / 1024) + 'KB)';
+        document.getElementById('txReceiptClear').classList.remove('hidden');
+      };
+      fr.onerror = () => showToast('לא הצלחנו לקרוא את הקובץ.');
+      fr.readAsDataURL(file);
+    }
+    // מכווץ תמונה (קובץ/blob) ושומר אותה כקבלה שתישמר יחד עם הפעולה
+    async function setPendingReceiptFromBlob(blob, silent) {
+      try {
+        const img = await fileToBitmap(blob);
+        const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        const scale = Math.min(1, 1200 / Math.max(w, h));
+        const c = document.createElement('canvas');
+        c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        let q = 0.7, out = c.toDataURL('image/jpeg', q);
+        while (out.length > 350000 && q > 0.3) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
+        if (out.length > 600000) { if (!silent) showToast('התמונה גדולה מדי גם אחרי כיווץ. נסו תמונה אחרת.'); return false; }
+        pendingReceiptData = out;
+        document.getElementById('txReceiptStatus').innerText = '✅ התמונה תישמר עם הפעולה (' + Math.round(out.length / 1024) + 'KB)';
+        document.getElementById('txReceiptClear').classList.remove('hidden');
+        return true;
+      } catch (e) {
+        console.error(e);
+        if (!silent) showToast('לא הצלחנו לקרוא את התמונה.');
+        return false;
+      }
     }
     async function viewReceipt(txId) {
       const { data, error } = await sb.from('receipts').select('data').eq('user_id', currentUserId).eq('transaction_id', String(txId)).maybeSingle();
@@ -1940,25 +1968,39 @@
       ov.className = 'fixed inset-0 z-[10000] flex items-center justify-center p-4';
       ov.style.cssText = 'background:rgba(15,23,42,.7);backdrop-filter:blur(4px);direction:rtl';
       ov.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden" style="max-height:calc(100dvh - 2rem)">
-        <div class="flex items-center justify-between p-4 border-b border-slate-100"><div class="font-bold text-slate-900">📎 תמונת קבלה</div><button type="button" class="rc-close text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button></div>
+        <div class="flex items-center justify-between p-4 border-b border-slate-100"><div class="font-bold text-slate-900">📎 קבלה</div><button type="button" class="rc-close text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button></div>
         <div id="rcBox" class="p-3 overflow-auto flex-1 min-h-0 bg-slate-50 text-center text-sm text-slate-500">⏳ טוען את הקבלה...</div>
         <div class="p-3 border-t border-slate-100 flex justify-between gap-2"><button type="button" class="rc-del px-3 py-2 rounded-xl text-xs font-bold text-rose-700 bg-white border border-rose-300 hover:bg-rose-50">🗑️ הסר קבלה</button><button type="button" class="rc-close px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200">סגור</button></div></div>`;
       document.body.appendChild(ov);
       // מציירים את הקבלה על קנבס (במקום תגית תמונה), כדי שסינוני תמונות בדפדפן/נטפרי לא יסתירו אותה
-      (function () {
+      (async function () {
         const box = ov.querySelector('#rcBox');
-        const im = new Image();
-        im.onload = () => {
+        try {
+          if (String(data.data).startsWith('data:application/pdf')) {
+            const buf = await dataUrlToBlob(data.data).arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+            box.innerHTML = '';
+            for (let n = 1; n <= Math.min(pdf.numPages, 5); n++) {
+              const page = await pdf.getPage(n);
+              const vp = page.getViewport({ scale: 1.5 });
+              const pc = document.createElement('canvas');
+              pc.width = vp.width; pc.height = vp.height;
+              pc.style.cssText = 'width:100%;height:auto;border-radius:8px;background:#fff;margin-bottom:8px';
+              await page.render({ canvasContext: pc.getContext('2d'), viewport: vp }).promise;
+              box.appendChild(pc);
+            }
+            return;
+          }
+          const im = await fileToBitmap(dataUrlToBlob(data.data));
           const c = document.createElement('canvas');
-          c.width = im.naturalWidth; c.height = im.naturalHeight;
+          c.width = im.naturalWidth || im.width; c.height = im.naturalHeight || im.height;
           c.style.cssText = 'width:100%;height:auto;border-radius:8px;background:#fff';
           c.getContext('2d').drawImage(im, 0, 0);
           box.innerHTML = ''; box.appendChild(c);
-        };
-        im.onerror = () => {
+        } catch (e) {
+          console.error(e);
           box.innerHTML = '<div class="py-6">לא ניתן להציג את התמונה בדפדפן הזה (ייתכן שהיא חסומה בסינון).<br>הפרטים של הפעולה (סכום, תיאור, תאריך) שמורים כרגיל.</div>';
-        };
-        im.src = data.data;
+        }
       })();
       ov.querySelectorAll('.rc-close').forEach(b => b.addEventListener('click', () => ov.remove()));
       ov.addEventListener('mousedown', (e) => { if (e.target === ov) ov.remove(); });
@@ -2668,7 +2710,8 @@
     async function handleReceiptUpload(inputEl) {
       const file = inputEl.files[0];
       if (!file) return;
-      if (classifyUploadFile(file) === 'sheet') {
+      const kind = classifyUploadFile(file);
+      if (kind === 'sheet') {
         // קובץ אקסל/CSV: עוברים לייבוא מרובה תנועות
         inputEl.value = '';
         closeModal();
@@ -2676,43 +2719,55 @@
         processImportFiles([file]);
         return;
       }
-      if (!classifyUploadFile(file)) { inputEl.value = ''; showToast('סוג הקובץ לא נתמך. אפשר להעלות PDF, תמונה, Excel או CSV.'); return; }
+      if (!kind) { inputEl.value = ''; showToast('סוג הקובץ לא נתמך. אפשר להעלות PDF, תמונה, Excel או CSV.'); return; }
+      if (kind === 'pdf' && file.size > 3 * 1024 * 1024) { inputEl.value = ''; showToast('קובץ ה-PDF גדול מדי (עד 3MB). נסו לפצל אותו או לשלוח כתמונה.'); return; }
       const btn = document.getElementById('scanReceiptBtn');
       const original = btn.innerText;
-      btn.innerText = '⏳ סורק חשבונית...';
+      btn.innerText = '⏳ קורא את הקובץ...';
       btn.disabled = true;
 
       try {
-        let base64;
-        if (file.type === 'application/pdf') {
-          base64 = await pdfFileToImageBase64(file);
-        } else {
-          base64 = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result.split(',')[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-        }
-
-        // שומרים את הקבלה שנסרקה גם כקבלה מצורפת לפעולה (תישמר כשלוחצים "שמור")
-        const savedOk = await setPendingReceiptFromDataUrl('data:image/jpeg;base64,' + base64, true);
+        // אותה קריאה כמו בייבוא מקובץ: ה-AI קורא את ה-PDF או התמונה ומחזיר רשימת תנועות
+        const base64 = kind === 'pdf' ? await fileToBase64Raw(file) : await imageFileToJpegBase64(file, 1800);
         const response = await fetch('/api/ai-assist', {
           method: 'POST',
           headers: await authHeaders(),
-          body: JSON.stringify({ mode: 'parse_receipt', imageBase64: base64, userId: currentUserId })
+          body: JSON.stringify({ mode: 'parse_document', imageBase64: base64, mimeType: kind === 'pdf' ? 'application/pdf' : 'image/jpeg' })
         });
-        const data = await response.json();
-        if (data.amount) document.getElementById('amountInput').value = data.amount;
-        if (data.description) document.getElementById('descriptionInput').value = data.description;
-        if (!data.amount && !data.description) {
-          showToast('לא הצלחנו לזהות פרטים בקובץ. נסו קובץ ברור יותר או מלאו ידנית.');
-        } else {
-          showToast('הפרטים מולאו אוטומטית מהחשבונית' + (savedOk ? ', והקבלה תישמר עם הפעולה' : '') + ' - בדקו ואשרו לפני השמירה.');
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) { showToast(translateAuthError(data.error || 'הקריאה האוטומטית נכשלה')); return; }
+        const list = data.transactions || [];
+        if (list.length === 0) { showToast('לא הצלחנו לזהות פרטים בקובץ. נסו קובץ ברור יותר או מלאו ידנית.'); return; }
+
+        if (list.length > 1) {
+          // כמה תנועות: עוברים למסך הייבוא עם רשימה לאישור
+          const defaultCategory = customCategories.find(c => c.includes('כללי')) || customCategories[0] || 'כללי';
+          const rows = list.map(x => ({
+            user_id: currentUserId,
+            action_type: x.type === 'income' ? 'הכנסה 📈' : 'הוצאה 📉',
+            amount: x.amount,
+            description: x.description || 'תנועה מקובץ',
+            category: defaultCategory,
+            occurred_at: x.date ? new Date(x.date + 'T12:00:00').toISOString() : new Date().toISOString()
+          }));
+          inputEl.value = '';
+          closeModal();
+          openImportExcelModal();
+          pendingImportRows = rows;
+          renderImportPreview();
+          return;
         }
+
+        // תנועה אחת (חשבונית): ממלאים את הטופס
+        const t = list[0];
+        document.getElementById('amountInput').value = t.amount;
+        if (t.description) document.getElementById('descriptionInput').value = t.description;
+        let savedOk = false;
+        if (kind === 'image') savedOk = await setPendingReceiptFromBlob(file, true);
+        showToast('הפרטים מולאו אוטומטית מהחשבונית' + (savedOk ? ', והקבלה תישמר עם הפעולה' : '') + ' - בדקו ואשרו לפני השמירה.');
       } catch (err) {
         console.error(err);
-        showToast('סריקת החשבונית נכשלה. נסו שוב.');
+        showToast('סריקת הקובץ נכשלה. נסו שוב.');
       } finally {
         btn.innerText = original;
         btn.disabled = false;
@@ -2804,21 +2859,14 @@
         r.readAsDataURL(file);
       });
     }
-    function imageFileToJpegBase64(file, maxSide) {
-      return new Promise((resolve, reject) => {
-        const url = URL.createObjectURL(file);
-        const img = new Image();
-        img.onload = () => {
-          const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-          const c = document.createElement('canvas');
-          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
-          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-          URL.revokeObjectURL(url);
-          resolve(c.toDataURL('image/jpeg', 0.8).split(',')[1]);
-        };
-        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('לא הצלחנו לקרוא את התמונה')); };
-        img.src = url;
-      });
+    async function imageFileToJpegBase64(file, maxSide) {
+      const img = await fileToBitmap(file);
+      const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+      const scale = Math.min(1, maxSide / Math.max(w, h));
+      const c = document.createElement('canvas');
+      c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.8).split(',')[1];
     }
     async function extractImportRowsFromFile(file) {
       const kind = classifyUploadFile(file);
