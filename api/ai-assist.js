@@ -106,6 +106,17 @@ const SITE_GUIDE = `מדריך האתר FamilyCent (השתמש בו כדי לה�
 
 פאנל מנהל (למנהלים בלבד): רשימת משתמשים עם הכנסות, הוצאות ופעילות אחרונה. אפשר ✅ לאשר משתמש חדש או ❌ לדחות אותו, 📋 להציג את הדוחות שלו, ♻️ לשחזר את הנתונים שלו מגיבוי (נפתחת רשימה של כל הגיבויים עם תאריך ושעה, ולוחצים על הגיבוי הרצוי). בכניסה לאתר קופץ למנהל חלון עם כל מה שממתין לטיפול (משתמשים חדשים ובקשות איפוס ושחזור), והוא מתעדכן גם בזמן שהאתר פתוח. בראש הפאנל מופיעה רשימת בקשות איפוס ושחזור ממתינות מהמשתמשים, עם כפתורים "✅ בצע איפוס" או "♻️ שחזר" ו-"❌ דחה". בראש הפאנל יש כפתור "📜 יומן פעולות מנהל" שמציג מי ביצע אילו פעולות ומתי. בעל האפליקציה בלבד יכול למנות או לבטל מנהלים ולמחוק משתמשים.`;
 
+// הגבלת קצב פשוטה בזיכרון (מאמץ סביר מול שחיקת מכסת ה-AI על ידי משתמש בודד)
+const rlHits = new Map();
+function rateLimited(key, max, windowMs) {
+  const now = Date.now();
+  const arr = (rlHits.get(key) || []).filter(t => now - t < windowMs);
+  if (arr.length >= max) { rlHits.set(key, arr); return true; }
+  arr.push(now); rlHits.set(key, arr);
+  if (rlHits.size > 5000) rlHits.clear();
+  return false;
+}
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const clip = (s, n) => String(s == null ? '' : s).slice(0, n);
 
@@ -133,6 +144,7 @@ module.exports = async function handler(req, res) {
   // רק משתמש מחובר רשאי להשתמש ב-AI (אחרת כל אחד יכול לצרוך את המכסה שלכם)
   const user = await getUserFromToken(req);
   if (!user || !user.id) return res.status(401).json({ error: 'נדרשת התחברות' });
+  if (rateLimited('ai:' + user.id, 30, 60 * 1000)) return res.status(429).json({ error: 'יותר מדי בקשות בזמן קצר. נסו שוב בעוד דקה.' });
 
   // משתמש שעדיין לא אושר על ידי המנהל לא יכול להשתמש ב-AI (חוסך מכסה ומונע ניצול לרעה)
   try {
