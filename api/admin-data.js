@@ -63,6 +63,8 @@ module.exports = async function handler(req, res) {
     if (!userRes.ok) return res.status(401).json({ error: 'טוקן התחברות לא תקין' });
     const userData = await userRes.json();
     const callerEmail = (userData.email || '').toLowerCase().trim();
+    // כתובת מייל שלא אומתה לא נחשבת (מונע התחזות לבעלים באמצעות הרשמה עם הכתובת שלו)
+    if (!(userData.email_confirmed_at || userData.confirmed_at)) return res.status(403).json({ error: 'כתובת המייל לא אומתה' });
     const isOwner = callerEmail === ADMIN_EMAIL;
 
     let callerIsAdmin = isOwner;
