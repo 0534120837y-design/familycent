@@ -42,6 +42,17 @@ async function userRest(req, path) {
 }
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// הגבלת קצב פשוטה בזיכרון (עוזרת מול ספאם; בסביבת שרת-ללא-מצב היא "מאמץ סביר" ולא ערובה מוחלטת)
+const rlHits = new Map();
+function rateLimited(key, max, windowMs) {
+  const now = Date.now();
+  const arr = (rlHits.get(key) || []).filter(t => now - t < windowMs);
+  if (arr.length >= max) { rlHits.set(key, arr); return true; }
+  arr.push(now); rlHits.set(key, arr);
+  if (rlHits.size > 5000) rlHits.clear();
+  return false;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -62,6 +73,7 @@ module.exports = async function handler(req, res) {
     if (!label) return res.status(400).json({ error: 'סוג בקשה לא תקין' });
     // מונע שימוש לרעה כשרשור הודעות למנהל: חייבת להיות בקשה פתוחה אמיתית של המשתמש שנוצרה ב-10 הדקות האחרונות
     if (!UUID_RE.test(String(user.id))) return res.status(400).json({ error: 'משתמש לא תקין' });
+    if (rateLimited('adm:' + user.id, 3, 10 * 60 * 1000)) return res.status(429).json({ error: 'יותר מדי בקשות. נסו שוב בעוד כמה דקות.' });
     const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const open = await userRest(req, `data_requests?user_id=eq.${user.id}&type=eq.${adminRequest}&status=eq.pending&created_at=gte.${encodeURIComponent(since)}&select=id&limit=1`);
     if (!Array.isArray(open) || open.length === 0) return res.status(403).json({ error: 'לא נמצאה בקשה פתוחה' });
@@ -75,6 +87,7 @@ module.exports = async function handler(req, res) {
     // משתמש שעדיין לא אושר על ידי המנהל לא יכול לשלוח מיילים
     const prof = await userRest(req, `profiles?id=eq.${user.id}&select=is_approved`);
     if (Array.isArray(prof) && prof[0] && prof[0].is_approved === false) return res.status(403).json({ error: 'החשבון ממתין לאישור מנהל' });
+    if (rateLimited('mail:' + user.id, 10, 60 * 1000)) return res.status(429).json({ error: 'יותר מדי מיילים. נסו שוב בעוד דקה.' });
     if (!subject || (!text && !html)) return res.status(400).json({ error: 'חסרים פרטים (subject / text או html)' });
     if (html && String(html).length > MAX_HTML) return res.status(413).json({ error: 'התוכן גדול מדי' });
     payload = { from, to: [user.email], subject: String(subject).slice(0, 200) };
@@ -88,8 +101,28 @@ module.exports = async function handler(req, res) {
     // הרשמה חדשה (עדיין בלי התחברות): היעד והתוכן נקבעים בשרת בלבד
     const adminEmail = process.env.ADMIN_EMAIL;
     if (!adminEmail) return res.status(500).json({ error: 'ADMIN_EMAIL לא מוגדר בהגדרות הפרויקט ב-Vercel' });
-    const family = esc(pendingUser.familyName);
-    const email = esc(pendingUser.email);
+    // הגבלת קצב כללית להתראות הרשמה (מונע הצפת מיילים על ידי גורם אנונימי)
+    if (rateLimited('signup:all', 10, 60 * 1000)) return res.status(200).json({ success: true });
+    const claimedEmail = String((pendingUser && pendingUser.email) || '').toLowerCase().trim().slice(0, 200);
+    if (!claimedEmail || rateLimited('signup:' + claimedEmail, 1, 10 * 60 * 1000)) return res.status(200).json({ success: true });
+    // אימות מול המסד: ההתראה נשלחת רק אם באמת קיים משתמש ממתין שנרשם ב-30 הדקות האחרונות, והפרטים נלקחים מהמסד ולא מהלקוח
+    let family = esc(pendingUser.familyName);
+    let email = esc(claimedEmail);
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (serviceKey && process.env.SUPABASE_URL) {
+      try {
+        const since30 = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const pr = await fetch(`${process.env.SUPABASE_URL}/rest/v1/profiles?email=eq.${encodeURIComponent(claimedEmail)}&is_approved=eq.false&created_at=gte.${encodeURIComponent(since30)}&select=email,family_name&limit=1`, {
+          headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+        });
+        const rows = pr.ok ? await pr.json() : null;
+        if (Array.isArray(rows)) {
+          if (rows.length === 0) return res.status(200).json({ success: true }); // אין משתמש ממתין כזה: מתעלמים בשקט
+          family = esc(rows[0].family_name || pendingUser.familyName);
+          email = esc(rows[0].email);
+        }
+      } catch (e) { /* אם הבדיקה נכשלה טכנית, ממשיכים כרגיל */ }
+    }
     const siteUrl = process.env.SITE_URL || '';
     payload = {
       from,
