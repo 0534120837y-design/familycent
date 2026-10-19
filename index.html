@@ -3485,6 +3485,13 @@
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
+    // מונע "הזרקת נוסחאות" בקובץ CSV/Excel: תא שמתחיל בתו נוסחה מקבל גרש בהתחלה, ופסיקים מוחלפים ברווח
+    function csvSafeCell(v) {
+      let x = String(v == null ? '' : v).replace(/[,\r\n]/g, ' ');
+      if (/^[=+\-@\t]/.test(x)) x = "'" + x;
+      return x;
+    }
+
     function sortTransactionsList(list) {
       const sortSelect = document.getElementById('sortOrderSelect');
       const sortVal = sortSelect ? sortSelect.value : 'date_desc';
@@ -3523,8 +3530,8 @@
       box.style.left = inputEl.offsetLeft + 'px';
       box.style.width = inputEl.offsetWidth + 'px';
       box.style.position = 'absolute';
-      const safeLocal = localPart.replace(/'/g, "\\'");
-      box.innerHTML = matches.map(d => `<div onmousedown="selectEmailSuggestion('${inputEl.id}', '${safeLocal}', '${d}')" class="px-3 py-1.5 hover:bg-indigo-50 cursor-pointer">${localPart}@${d}</div>`).join('');
+      const safeLocal = escapeHtml(localPart.replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+      box.innerHTML = matches.map(d => `<div onmousedown="selectEmailSuggestion('${inputEl.id}', '${safeLocal}', '${escapeHtml(d)}')" class="px-3 py-1.5 hover:bg-indigo-50 cursor-pointer">${escapeHtml(localPart)}@${escapeHtml(d)}</div>`).join('');
     }
     function selectEmailSuggestion(inputId, localPart, domain) {
       const inputEl = document.getElementById(inputId);
@@ -4775,7 +4782,7 @@
       if (filtered.length === 0) { showToast('אין נתונים לייצוא'); return; }
       let csvContent = "\uFEFFתאריך,סוג פעולה,תיאור,קטגוריה,סכום\n";
       filtered.forEach(t => {
-        csvContent += `${new Date(t.timestamp).toLocaleDateString('he-IL')},${t.actionType},${t.description.replace(/,/g, ' ')},${t.category},${t.amount}\n`;
+        csvContent += `${new Date(t.timestamp).toLocaleDateString('he-IL')},${t.actionType},${csvSafeCell(t.description)},${csvSafeCell(t.category)},${t.amount}\n`;
       });
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement("a");
